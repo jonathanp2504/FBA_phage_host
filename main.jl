@@ -2,20 +2,25 @@ using COBREXA
 using HiGHS
 using AbstractFBCModels
 import SBMLFBCModels
-Pkg.add("DifferentialEquations")
-Pkg.add("DelayDiffEq")
+using Pkg
+#Pkg.add("DifferentialEquations")
+#Pkg.add("DelayDiffEq")
 using Plots
+using DifferentialEquations
 
 
 # 1. Model laden
 model = convert(AbstractFBCModels.CanonicalModel.Model, load_model("e_coli_core.xml"))
 
 # 2. Cybernetische Parameters 
-alfa_syn = 0.2   # Snelheid van enzymsynthese
+alpha_syn = 0.2   # Snelheid van enzymsynthese
 beta_deg = 0.05   # Snelheid van enzymdegradatie
 K_s = 0.005      # Affiniteit uit Tabel 7 (5 mg/L)
 
-function dFBA_phage_system(du, u, h, p, t)
+include("./parameters.jl")
+parameters::Parameters = Parameters(alpha_syn, beta_deg, K_s)
+
+function dFBA_phage_system(du, u, h, p::Parameters, t)
     # INDEX: 
     # 1: X (Biomassa) | 2:4 S (Glc, Mal, Ac) | 5:7 e (Enzymen)
     # 8: S_cell (Vatbaar) | 9: I (Infect) | 10: L (Lysogeen) | 11: P (Fagen)
@@ -76,7 +81,7 @@ function dFBA_phage_system(du, u, h, p, t)
     for i in 1:3
         du[i+1] = q[i] * X_tot 
         # Enzymdynamiek: Synthese (alfa * f * u) - Degradatie (beta * e)
-        du[i+4] = alfa_syn * f[i] * u_cyt[i] - beta_deg * e_enz[i]
+        du[i+4] = p.alpha_syn * f[i] * u_cyt[i] - p.beta_deg * e_enz[i]
     end
 
     # Faag-Host interactie
@@ -91,7 +96,7 @@ end
 u0 = [0.001, 8.0, 8.0, 0.0, 0.97, 0.01, 0.01, 0.001, 0.0, 0.0, 1000.0]
 tspan = (0.0, 48.0) # Tijd verlengd naar 48u omdat de start-biomassa lager is
 
-prob = DDEProblem(dFBA_phage_system, u0, (p,t)->u0, tspan)
+prob = DDEProblem(dFBA_phage_system, u0, (p,t)->u0, tspan, parameters)
 sol = solve(prob, MethodOfSteps(Tsit5()), reltol=1e-6)
 
 # 6. UITGEBREID PLOTTEN
