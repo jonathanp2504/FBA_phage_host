@@ -5,7 +5,7 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     X_tot = getTotalBiomass(u, p)
 
     # 1. CYBERNETICA (f, u en v)
-    f = [S_subs[i] > 1e-5 ? S_subs[i] / (S_subs[i] + K_s[i]) : 0.0 for i in 1:3]
+    f = getMonod(S_subs, p)
     R = V_max .* f
     
     # u_cyt bepaalt de synthese van enzymen (e)
@@ -16,22 +16,18 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     v_cyt = [R[i] / (maximum(R) + 1e-10) for i in 1:3]
 
     # 2. LYSIS TERMIJN 
-    if t < tau
-        lysis_term = 0.0
-    else
-        u_p = h(p, t - tau)
-        # Cellen die nu barsten zijn tau geleden geïnfecteerd
-        lysis_term = p.alfa_ads * u_p[p.ind_S] * u_p[p.ind_P]
-    end
+    u_p = h(p, t - tau)
+    # Cellen die nu barsten zijn tau geleden geïnfecteerd
+    lysis_term = p.alfa_ads * u_p[p.ind_S] * u_p[p.ind_P]
 
     # 3. FBA KOPPELING
-    for id in keys(model.reactions); if startswith(id, "R_EX_"); model.reactions[id].lower_bound = 0.0; end; end
+    # for id in keys(model.reactions); if startswith(id, "R_EX_"); model.reactions[id].lower_bound = 0.0; end; end
     
     # De bounds worden beperkt door het huidige enzym-niveau e_enz
     model.reactions["R_EX_glc__D_e"].lower_bound = -R[1] * e_enz[1] * v_cyt[1]
     model.reactions["R_EX_mal__L_e"].lower_bound = -R[2] * e_enz[2] * v_cyt[2]
     model.reactions["R_EX_ac_e"].lower_bound      = -R[3] * e_enz[3] * v_cyt[3]
-
+    
     sol = flux_balance_analysis(model, optimizer = HiGHS.Optimizer)
     
     if isnothing(sol) || isnan(sol.fluxes["R_BIOMASS_Ecoli_core_w_GAM"])
@@ -49,8 +45,13 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     end
 
     # Faag-Host interactie
-    du[p.ind_S] = mu * p.E_coli_cellDW * S_cell - (p.alfa_ads * S_cell * P_phage)
+    du[p.ind_S] = mu * S_cell - (p.alfa_ads * S_cell * P_phage)
     du[p.ind_I] = (p.alfa_ads * S_cell * P_phage) - lysis_term
-    du[p.ind_L] = mu * p.E_coli_cellDW * L_cell
+    du[p.ind_L] = mu * L_cell
     du[p.ind_P] = (p.b * lysis_term) - (p.alfa_ads * S_cell * P_phage)
+    println(t)
+end
+
+function getMonod(substrates::Vector{Float64}, parameters::Parameters)::Vector{Float64}
+    return [max(0.0, substrates[i] / (substrates[i] + parameters.K_s[i])) for i in eachindex(substrates)]
 end
