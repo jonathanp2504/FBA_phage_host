@@ -10,15 +10,20 @@ using DifferentialEquations
 
 
 # 1. Model laden
-model = convert(AbstractFBCModels.CanonicalModel.Model, load_model("e_coli_core.xml"))
+model = convert(AbstractFBCModels.CanonicalModel.Model, load_model("./FBA_phage_host/e_coli_core.xml"))
 
 # 2. Cybernetische Parameters 
 alpha_syn = 0.2   # Snelheid van enzymsynthese
 beta_deg = 0.05   # Snelheid van enzymdegradatie
 K_s = 0.005      # Affiniteit uit Tabel 7 (5 mg/L)
+tau = 0.6          # Latente periode (uren)
+b = 170.0          # Burst size
+alfa_ads = 0.0594  # Adsorptieconstante (L/gDW/h)
+p_pref = [0.8925, 0.08925, 0.01825] # Voorkeurshiërarchie uit thesis
+V_max = [15.0, 13.0, 4.0]           # Opnamesnelheden
 
 include("./parameters.jl")
-parameters::Parameters = Parameters(alpha_syn, beta_deg, K_s)
+parameters::Parameters = Parameters(alpha_syn, beta_deg, K_s, tau, b, alfa_ads, p_pref, V_max)
 
 function dFBA_phage_system(du, u, h, p::Parameters, t)
     # INDEX: 
@@ -30,13 +35,6 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     e_enz  = u[5:7]
     S_cell, I_cell, L_cell, P_phage = u[8:11]
     X_tot = S_cell + I_cell + L_cell
-
-    # --- PARAMETERS UIT TABEL 7 ---
-    tau = 0.6          # Latente periode (uren)
-    b = 170.0          # Burst size
-    alfa_ads = 0.0594  # Adsorptieconstante (L/gDW/h)
-    p_pref = [0.8925, 0.08925, 0.01825] # Voorkeurshiërarchie uit thesis
-    V_max = [15.0, 13.0, 4.0]           # Opnamesnelheden
 
     # 1. CYBERNETICA (f, u en v)
     f = [S_subs[i] > 1e-5 ? S_subs[i] / (S_subs[i] + K_s) : 0.0 for i in 1:3]
