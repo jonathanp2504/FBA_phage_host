@@ -10,7 +10,9 @@ using DifferentialEquations
 
 
 # 1. Model laden
-model = convert(AbstractFBCModels.CanonicalModel.Model, load_model("./e_coli_core.xml"))
+model_path = joinpath(@__DIR__, "iJO1366.xml")
+@assert isfile(model_path) "iJO1366.xml does not exist at path: $model_path"
+model = convert(AbstractFBCModels.CanonicalModel.Model, load_model(model_path))
 
 # 2. Cybernetische Parameters 
 alpha_syn = 0.2   # Snelheid van enzymsynthese
@@ -19,19 +21,26 @@ K_s = [0.0278, 0.0146, 0.0833]      # Affiniteit uit Tabel 7 (mmol/L)
 tau = 0.6          # Latente periode (uren)
 b = 170.0          # Burst size
 alfa_ads = 1e-7  # Adsorptieconstante (L/gDW/h)
-p_pref = [0.8925, 0.08925, 0.01825] # Voorkeurshiërarchie uit thesis
-V_max = [15.0, 13.0, 4.0]           # Opnamesnelheden (mmol/hr^-1)
+p_pref = [0.8925, 0.08925,  0.008925,  0.008925] # Voorkeurshiërarchie uit thesis
+V_max = [15.0, 13.0, 11.0, 4.0]           # Opnamesnelheden (mmol/hr^-1)
 E_coli_cellDW = 2.8e-13 # gDW per cel
-
+infection_time = 5.0 # Tijdstip van infectie (uren)
+essentials_ids = ["R_EX_o2_e", "R_EX_nh4_e", "R_EX_pi_e", "R_EX_so4_e", "R_EX_k_e", "R_EX_mg2_e", "R_EX_ca2_e", "R_EX_cl_e", "R_EX_fe2_e", "R_EX_fe3_e", "R_EX_mn2_e", "R_EX_zn2_e", "R_EX_cu2_e", "R_EX_cobalt2_e", "R_EX_mobd_e", "R_EX_thi_e", "R_EX_ni2_e", "R_EX_sel_e", "R_EX_slnt_e", "R_EX_tungs_e"]
+exchange_ids   = ["R_EX_glc__D_e", "R_EX_malt_e", "R_EX_glyc_e", "R_EX_ac_e"]
+all_ex_ids     = [id for id in keys(model.reactions) if startswith(id, "R_EX_")]
+MW_values      = [180.16, 342.3, 92.09, 60.05]
+h_release = 5.66e-12 # glucose vrijgegeven bij lysis (mmol/burst) waarde gebaseerd op Luan table 7
+# --- 2. De Struct aanmaken ---
+# Zorg dat de volgorde in je Parameters-file exact matcht met deze aanroep:
 include("./parameters.jl")
-parameters::Parameters = Parameters(alpha_syn, beta_deg, K_s, tau, b, alfa_ads, p_pref, V_max, E_coli_cellDW,7,8,9,10,4:6,1:3)
+p = Parameters(alpha_syn, beta_deg, K_s, tau, b, alfa_ads, p_pref, V_max, E_coli_cellDW,MW_values, h_release, "R_BIOMASS_Ec_iJO1366_core_53p95M", exchange_ids, all_ex_ids, essentials_ids, 9, 10, 11, 12, 5:8, 1:4, infection_time)
 include("./dFBA_function.jl")
 # 5. INITIALISATIE
-# [Glc, Mal, Ac, e_glc, e_mal, e_ac, S, I, L, P] (subs in mmol/l)
-u0 = [4.44, 2.337, 0.0, 0.97, 0.01, 0.01, 1e6, 0.0, 0.0, 0.0]
-tspan = (0.0, 15.0) # Tijd verlengd naar 48u omdat de start-biomassa lager is
+# [Glc, Mal, Glyc, Ac, e_glc, e_mal, e_Glyc, e_ac, S, I, L, P] (subs in mmol/l)
+u0 = [4.44, 2.337, 5.42, 0.0, 0.95, 0.01, 0.01, 0.01, 0.01, 0.0, 0.0, 0.0]
+tspan = (0.0, 15.0) 
 
-infectionCondition(u, t, integrator) = t == 5.0 # h !! VOEG TOE AAN Parameters
+infectionCondition(u, t, integrator) = t == p.infection_time 
 infectionAffect!(integrator) = integrator.u[parameters.ind_P] = 1000.0
 infectionCallBack = DiscreteCallback(infectionCondition, infectionAffect!)
 
