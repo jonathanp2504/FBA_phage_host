@@ -1,5 +1,4 @@
 function dFBA_phage_system(du, u, h, p::Parameters, t)
-    # --- INITIALISATIE (Cruciaal tegen UndefVarError) ---
     mu = 0.0
     q  = zeros(length(p.ind_subs))
     
@@ -15,7 +14,6 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     v_cyt = getV_cyt(R) # <--- De rode lijn zou nu moeten verdwijnen
 
     # --- 2. FBA ---
-    # (Je bestaande loops voor essentials en exchange_ids...)
     for i in 1:length(p.ind_subs)
         id = p.ex_ids[i]
         if haskey(model.reactions, id)

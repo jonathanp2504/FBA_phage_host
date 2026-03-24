@@ -17,7 +17,7 @@ model = convert(AbstractFBCModels.CanonicalModel.Model, load_model(model_path))
 # 2. Cybernetische Parameters 
 alpha_syn = 0.2   # Snelheid van enzymsynthese
 beta_deg = 0.05   # Snelheid van enzymdegradatie
-K_s = [0.0278, 0.0146, 0.0833]      # Affiniteit uit Tabel 7 (mmol/L)
+K_s = [0.0278, 0.0146, 0.0543, 0.0833]      # Affiniteit uit Tabel 7 (mmol/L)
 tau = 0.6          # Latente periode (uren)
 b = 170.0          # Burst size
 alfa_ads = 1e-7  # Adsorptieconstante (L/gDW/h)
@@ -33,7 +33,7 @@ h_release = 5.66e-12 # glucose vrijgegeven bij lysis (mmol/burst) waarde gebasee
 # --- 2. De Struct aanmaken ---
 # Zorg dat de volgorde in je Parameters-file exact matcht met deze aanroep:
 include("./parameters.jl")
-p = Parameters(alpha_syn, beta_deg, K_s, tau, b, alfa_ads, p_pref, V_max, E_coli_cellDW,MW_values, h_release, "R_BIOMASS_Ec_iJO1366_core_53p95M", exchange_ids, all_ex_ids, essentials_ids, 9, 10, 11, 12, 5:8, 1:4, infection_time)
+parameters = Parameters(alpha_syn, beta_deg, K_s,V_max, p_pref, tau, b, alfa_ads, E_coli_cellDW, MW_values, h_release, "R_BIOMASS_Ec_iJO1366_core_53p95M", exchange_ids, all_ex_ids, essentials_ids, 5:8, 1:4, 9, 10, 11, 12, infection_time)
 include("./dFBA_function.jl")
 # 5. INITIALISATIE
 # [Glc, Mal, Glyc, Ac, e_glc, e_mal, e_Glyc, e_ac, S, I, L, P] (subs in mmol/l)
@@ -45,16 +45,16 @@ infectionAffect!(integrator) = integrator.u[parameters.ind_P] = 1000.0
 infectionCallBack = DiscreteCallback(infectionCondition, infectionAffect!)
 
 prob = DDEProblem(dFBA_phage_system, u0, (p,t)->u0, tspan, parameters)
-sol = solve(prob, MethodOfSteps(Tsit5()), reltol=1e-6, tstops=[5.0], callback=infectionCallBack )
+sol = solve(prob, MethodOfSteps(Tsit5()), reltol=1e-6, tstops=[p.infection_time], callback=infectionCallBack)
 
 # 6. UITGEBREID PLOTTEN
 # Plot A: Substraatverloop
 p1 = plot(sol, idxs=parameters.ind_subs, title="Substraten (mmol/L)", 
-          label=["Glucose" "Maltose" "Acetaat"], lw=2, ylabel="Conc.")
+          label=["Glucose" "Maltose" "Glycerol" "Acetaat"], lw=2, ylabel="Conc.")
 
 # Plot B: Enzymatische Adaptatie 
 p2 = plot(sol, idxs=parameters.ind_e, title="Enzym-niveaus (Cybernetische e)", 
-          label=["e_Glc" "e_Mal" "e_Ac"], lw=2, ls=:dash, ylabel="Relatief niveau")
+          label=["e_Glc" "e_Mal" "e_Glyc""e_Ac"], lw=2, ls=:dash, ylabel="Relatief niveau")
 
 
 # Plot C: Host populatie
