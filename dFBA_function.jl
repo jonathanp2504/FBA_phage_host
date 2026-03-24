@@ -1,7 +1,6 @@
 function dFBA_phage_system(du, u, h, p::Parameters, t)
-    mu = 0.0
-    q  = zeros(length(p.ind_subs))
-    
+    println(t)
+ 
     # --- EXTRACTIE ---
     S_subs = u[p.ind_subs]
     e_enz  = u[p.ind_e]
@@ -13,22 +12,8 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     u_cyt = getU_cyt(R, p)
     v_cyt = getV_cyt(R) # <--- De rode lijn zou nu moeten verdwijnen
 
-    # --- 2. FBA ---
-    for i in 1:length(p.ind_subs)
-        id = p.ex_ids[i]
-        if haskey(model.reactions, id)
-            model.reactions[id].lower_bound = -R[i] * e_enz[i] * v_cyt[i]
-        end
-    end
-
-    sol = flux_balance_analysis(model, optimizer = HiGHS.Optimizer)
-
-    # Update mu en q
-    if !isnothing(sol) && haskey(sol.fluxes, p.biomass_id)
-        mu = sol.fluxes[p.biomass_id]
-        q  = getFluxes(sol, p.ex_ids)
-    end
-    phi = getPhi(P_phage, mu, p)
+   
+    phi = getPhi(P_phage, p)
     prob_lys = getProbLys(phi)
     
     X_tot                 = getTotalBiomass(u, p)
@@ -42,7 +27,7 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
         enz_idx = p.ind_e[i]    # Dit is index 5, 6, 7 of 8
 
         # Substraat verandering (mmol/L/h)
-        du[sub_idx] = q[i] * p.E_coli_cellDW * X_tot 
+        du[sub_idx] = p.q[i] * p.E_coli_cellDW * X_tot 
         
         # Glucose release (alleen bij het eerste substraat)
         if i == 1
@@ -55,9 +40,9 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     end
 
     # Faag-Host interactie
-    du[p.ind_S] = mu * S_cell - nieuwe_infectie_flux
+    du[p.ind_S] = p.mu * S_cell - nieuwe_infectie_flux
     du[p.ind_I] = (1 - prob_lys) * nieuwe_infectie_flux - lysis_term
-    du[p.ind_L] = mu * L_cell + (prob_lys * nieuwe_infectie_flux)
+    du[p.ind_L] = p.mu * L_cell + (prob_lys * nieuwe_infectie_flux)
     du[p.ind_P] = (p.b * lysis_term) - totaal_adsorptie_flux
 end
 
@@ -86,7 +71,6 @@ end
 # Als een ID niet in de oplossing zit, wordt 0.0 teruggegeven.
 function getFluxes(sol, ids::Vector{String})::Vector{Float64}
     flux_vector = zeros(length(ids)) 
-    
     for i in eachindex(ids)
         id = ids[i]
         if haskey(sol.fluxes, id)

@@ -1,4 +1,4 @@
-struct Parameters 
+mutable struct Parameters 
     # Cybernetica & Kinetiek
     alpha_syn::Float64 
     beta_deg::Float64
@@ -19,6 +19,9 @@ struct Parameters
     ex_ids::Vector{String}
     all_exchanges::Vector{String}
     essentials::Vector{String}
+    fbaModel
+    mu::Float64
+    q::Vector{Float64}
 
     # Indices voor state vector u
     ind_subs::Vector{Int64}
@@ -31,9 +34,9 @@ struct Parameters
 end
 
 # Berekent de lokale MOI (phi): de verhouding tussen infectiesnelheid en groeisnelheid
-function getPhi(P_phage, mu, p::Parameters)
+function getPhi(P_phage, p::Parameters)
     # phi = (alpha * P) / mu
-    return (p.alfa_ads * P_phage) / (mu + 1e-10)
+    return (p.alfa_ads * P_phage) / (p.mu + 1e-10)
 end
 
 # Berekent de kans op lysogenie op basis van phi
@@ -47,6 +50,10 @@ function getTotalBiomass(u, p::Parameters)
     return u[p.ind_S] + u[p.ind_I] + u[p.ind_L]
 end
 
+function getPhages(u, p::Parameters)::Float64 
+    return u[p.ind_P]
+end
+
 function getTotalAdsorptionFlux(u, p::Parameters)
     X_tot = getTotalBiomass(u, p)
     return p.alfa_ads * X_tot * u[p.ind_P]
@@ -54,4 +61,34 @@ end
 
 function getNewInfectionFlux(u, p::Parameters)
     return p.alfa_ads * u[p.ind_S] * u[p.ind_P]
+end
+
+function fbaUpdate!(u, p::Parameters)
+    # --- EXTRACTIE ---
+    S_subs = u[p.ind_subs]
+    e_enz  = u[p.ind_e]
+
+    # --- 1. CYBERNETICA ---
+    f = getMonod(S_subs, p)
+    R = getRate(f, p)
+    u_cyt = getU_cyt(R, p)
+    v_cyt = getV_cyt(R) # <--- De rode lijn zou nu moeten verdwijnen
+
+    # --- 2. FBA ---
+    for i in 1:length(p.ind_subs)
+        id = p.ex_ids[i]
+        if haskey(p.fbaModel.reactions, id)
+            p.fbaModel.reactions[id].lower_bound = -R[i] * e_enz[i] * v_cyt[i]
+        end
+    end
+
+    sol = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
+
+    # Update mu en q
+    if !isnothing(sol) && haskey(sol.fluxes, p.biomass_id)
+        p.mu = sol.fluxes[p.biomass_id]
+        p.q  = getFluxes(sol, p.ex_ids)
+    else 
+        p.mu = 0.0; p.q .= 0.0
+    end
 end
