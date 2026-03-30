@@ -13,15 +13,39 @@ using DifferentialEquations
 model_path = joinpath(@__DIR__, "iJO1366.xml")
 @assert isfile(model_path) "iJO1366.xml does not exist at path: $model_path"
 model = convert(AbstractFBCModels.CanonicalModel.Model, load_model(model_path))
+
+#insulin_rxn = AbstractFBCModels.CanonicalModel.Reaction(
+    #id = "R_INSULIN_PROD",
+    #metabolites = Dict(
+        #"atp_c" => -204.0,   # 4 ATP per peptidebinding (51 AA * 4)
+        #"h2o_c" => -204.0,
+        #"adp_c" => 204.0,
+        #"pi_c" => 204.0,
+        # vul de rest van de aminozuren hier aan
+        #"insuline_c" => 1.0),
+    #lower_bound = 0.0,
+    #upper_bound = 1000.0)
+
+# Definieer de export naar het medium
+#insulin_ex = AbstractFBCModels.CanonicalModel.Reaction(
+ #   id = "R_EX_insulin_e",
+  #  metabolites = Dict("insuline_c" => -1.0),
+   # lower_bound = 0.0,
+    #upper_bound = 1000.0)
+
+# Voeg ze daadwerkelijk toe aan het model object
+#model.reactions["R_INSULIN_PROD"] = insulin_rxn
+#model.reactions["R_EX_insulin_e"] = insulin_ex
+
 model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].lower_bound = 0.0 # bacterial growth is constrained!!!
-model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].upper_bound = 2.0 # [1/h]
+model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].upper_bound = 2.0 # [1/h] moet bovenlimiet op staan anders te hoog
 # 2. Cybernetische Parameters 
-alpha_syn = 0.2*10   # Snelheid van enzymsynthese
+alpha_syn = 0.2*10   # Snelheid van enzymsynthese waardes van deze 2 nog opzoeken (stonden te laag)
 beta_deg = 0.05*10   # Snelheid van enzymdegradatie
 K_s = [0.0278, 0.0146, 0.0543, 0.0833]      # Affiniteit uit Tabel 7 (mmol/L)
 tau = 1.0          # Latente periode (uren)
 b = 170.0          # Burst size
-alfa_ads = 1e-10  # Adsorptieconstante (L/gDW/h)
+alfa_ads = 1e-10  # Adsorptieconstante (L/gDW/h) lager dan bij Luan want eigenlijk meer deze waarde voor lambda bij te hoge alfa numerieke problemen)
 p_pref = [0.8925, 0.08925,  0.008925,  0.008925] # Voorkeurshiërarchie uit thesis
 V_max = [15.0, 13.0, 11.0, 4.0]           # Opnamesnelheden (mmol/hr^-1)
 E_coli_cellDW = 2.8e-13 # gDW per cel
@@ -35,26 +59,40 @@ duration = 10.0
 # --- 2. De Struct aanmaken ---
 # Zorg dat de volgorde in je Parameters-file exact matcht met deze aanroep:
 include("./parameters.jl")
-p = Parameters(alpha_syn, beta_deg, K_s,V_max, p_pref, tau, b, alfa_ads, E_coli_cellDW, MW_values, h_release, "R_BIOMASS_Ec_iJO1366_core_53p95M", exchange_ids, all_ex_ids, essentials_ids, model, 0.0, zeros(length(exchange_ids)), 5:8, 1:4, 9, 10, 11, 12, infection_time)
+p = Parameters(
+    alpha_syn, beta_deg, K_s, V_max, p_pref, tau, b, alfa_ads, E_coli_cellDW, MW_values, h_release, 
+    "R_BIOMASS_Ec_iJO1366_core_53p95M", 
+    exchange_ids, all_ex_ids, essentials_ids, 
+    model, 0.0, zeros(length(exchange_ids)), 
+    1:4,  # ind_subs: nu correct op 1, 2, 3, 4
+    5:8,  # ind_e:    nu correct op 5, 6, 7, 8
+    9,    # ind_S
+    10,   # ind_I
+    11,   # ind_L
+    12,   # ind_P
+    infection_time)
 include("./dFBA_function.jl")
 # 5. INITIALISATIE
 # [Glc, Mal, Glyc, Ac, e_glc, e_mal, e_Glyc, e_ac, S, I, L, P] (subs in mmol/l)
-u0 = [4.44, 2.337, 5.42, 0.0, 0.95, 0.01, 0.01, 0.01, 1e6, 0.0, 0.0, 0.0]
+u0 = [4.44, 2.337, 5.42, 0.0, 0.95, 0.01, 0.01, 0.01, 1e6, 0.0, 0.0, 0.0] #startwaardes komen niet overeen met plot wat vreemd is + er gebeurt niets met maltose --> fix!
 fbaUpdate!(u0, p)
 tspan = (0.0, duration) 
 
-infectionCondition(u, t, integrator) = t == p.infection_time 
+infectionCondition(u, t, integrator) = t == p.infection_time #pathway in FBA bouwen die iets zegt over hoeveel product er wordt gemaakt --> dan uw model voor set van verschillende infection times runnen en zien wat maximale productie geeft
 infectionAffect!(integrator) = integrator.u[p.ind_P] = 1000.0
 infectionCallBack = DiscreteCallback(infectionCondition, infectionAffect!)
 
-fbaUpdateTimepoints = collect(0:0.1:10.0)
+fbaUpdateTimepoints = collect(0:0.1:10.0) # Elke 0.1 uur een FBA-update uitvoeren wordt gestored in fbaModel in parameters (sneller dan als we het niet zo doen) --> kleine bug glucose gaat onder 0 dus zet constraint op 0
 fbaUpdateCondition(u, t, integrator) = t in fbaUpdateTimepoints
 fbaAffect!(integrator) = fbaUpdate!(integrator.u, p)
 fbaCallBack = DiscreteCallback(fbaUpdateCondition, fbaAffect!)
 
 prob = DDEProblem(dFBA_phage_system, u0, (p,t)->u0, tspan, p)
-sol = solve(prob, MethodOfSteps(Tsit5()), reltol=1e-6, tstops=[p.infection_time; fbaUpdateTimepoints], callback=CallbackSet(infectionCallBack, fbaCallBack))
-
+sol = solve(prob, MethodOfSteps(Tsit5()), 
+            reltol=1e-6, 
+            tstops=[p.infection_time; fbaUpdateTimepoints], 
+            callback=CallbackSet(infectionCallBack, fbaCallBack))
+            #met isoutofdomain stopt solver telkens na 6 uur omdat glucose onder 0 gaat, dus nu met discrete callback die elke 0.1 uur FBA update doet en daarin zetten we constraint op glucose op 0 als die onder 0 gaat, werkt goed en sneller dan zonder discrete callback (omdat we niet telkens opnieuw moeten oplossen maar gewoon de constraints aanpassen in het model)
 # 6. UITGEBREID PLOTTEN
 # Plot A: Substraatverloop
 p1 = plot(sol, idxs=p.ind_subs, title="Substraten (mmol/L)", 
@@ -77,3 +115,7 @@ p4 = plot(sol.t, [getPhages(u, p) for u in sol.u], title="Fagen (P)", yscale=:lo
 
 
 plot(p1, p2, p3, p4, layout=(2,2), size=(800,800), margin=5Plots.mm)
+
+#volgende stap is nu productie erin te krijgen en in uw FBA inbouwen door bijvoorbeeld zelf reacties toe te voegen zoals in stoich matrix (bijvoorbeeld met insuline/benzoase (enzym misschien goede eerste stap, moet niet per se aan FBA omdat enzym) --> welke enzymes etc zijn nodig in E. Coli hiervoor en welke substraten moeten voor deze productie worden opgenomen, zie paper in edge)
+#branch maken in github ook dat je terugkan als het niet lukt
+# als ik dat heb zoek op optimization.jl (zoek package en neem door)

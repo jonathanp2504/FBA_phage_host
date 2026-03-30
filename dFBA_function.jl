@@ -1,5 +1,4 @@
 function dFBA_phage_system(du, u, h, p::Parameters, t)
-    println(t)
  
     # --- EXTRACTIE ---
     S_subs = u[p.ind_subs]
@@ -20,29 +19,30 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     totaal_adsorptie_flux = getTotalAdsorptionFlux(u, p)
     nieuwe_infectie_flux  = getNewInfectionFlux(u, p)
     u_p = h(p, t - p.tau)
-    lysis_term = p.alfa_ads * u_p[p.ind_S] * u_p[p.ind_P]
+    lysis_term = t > p.tau ? getNewInfectionFlux(u_p, p) : 0.0
     # 4. DIFFERENTIAALVERGELIJKINGEN  
     for i in 1:length(p.ind_subs)
-        sub_idx = p.ind_subs[i] # Dit is index 1, 2, 3 of 4
-        enz_idx = p.ind_e[i]    # Dit is index 5, 6, 7 of 8
+        sub_idx = p.ind_subs[i]
+        enz_idx = p.ind_e[i]
 
-        # Substraat verandering (mmol/L/h)
-        du[sub_idx] = p.q[i] * p.E_coli_cellDW * X_tot 
+        # FIX: Voorkom negatieve du als S al bijna 0 is
+        if S_subs[i] < 1e-7 && p.q[i] >= 0 # q is negatief voor opname
+             du[sub_idx] = 0.0
+        else
+             du[sub_idx] = p.q[i] * p.E_coli_cellDW * X_tot 
+        end
         
-        # Glucose release (alleen bij het eerste substraat)
         if i == 1
             du[sub_idx] += p.h_release * lysis_term
         end
 
-        # Enzymdynamiek (gebruik de enzym_idx uit je parameters)
-        # f[i], u_cyt[i] en e_enz[i] hebben index 1 t/m 4
         du[enz_idx] = p.alpha_syn * f[i] * u_cyt[i] - p.beta_deg * e_enz[i]
     end
 
     # Faag-Host interactie
     du[p.ind_S] = p.mu * S_cell - nieuwe_infectie_flux
     du[p.ind_I] = (1 - prob_lys) * nieuwe_infectie_flux - lysis_term
-    du[p.ind_L] = p.mu * L_cell + (prob_lys * nieuwe_infectie_flux)
+    du[p.ind_L] = p.mu * L_cell + (prob_lys * nieuwe_infectie_flux) # raar dat er geen overshoot is van total X wat vreemd is, waarschijnlijk iets te maken met getphi ---> bekijk voor alternatief (misschien op andere manier doen, zonder growth speed initieel)
     du[p.ind_P] = (p.b * lysis_term) - totaal_adsorptie_flux
 end
 

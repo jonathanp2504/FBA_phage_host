@@ -34,9 +34,10 @@ mutable struct Parameters
 end
 
 # Berekent de lokale MOI (phi): de verhouding tussen infectiesnelheid en groeisnelheid
-function getPhi(P_phage, p::Parameters)
-    # phi = (alpha * P) / mu
-    return (p.alfa_ads * P_phage) / (p.mu + 1e-10)
+function getPhi(u, p::Parameters)
+    alfa_eff = getAlfa_eff(u, p)
+    P_phage = u[p.ind_P]
+    return (alfa_eff * P_phage) * p.delta_t_exp
 end
 
 # Berekent de kans op lysogenie op basis van phi
@@ -56,35 +57,54 @@ end
 
 function getTotalAdsorptionFlux(u, p::Parameters)
     X_tot = getTotalBiomass(u, p)
-    return p.alfa_ads * X_tot * u[p.ind_P]
+    alfa_eff = getAlfa_eff(u, p)
+    return alfa_eff * X_tot * u[p.ind_P]
 end
 
 function getNewInfectionFlux(u, p::Parameters)
-    return p.alfa_ads * u[p.ind_S] * u[p.ind_P]
+    alfa_eff = getAlfa_eff(u, p)
+    return alfa_eff * u[p.ind_S] * u[p.ind_P]
+end
+
+function getAlfa_eff(u, p::Parameters)
+    e_mal = u[p.ind_e[2]] # Stel dat maltose het 2e substraat is
+    # e_mal loopt van 0 tot 1 (relatief enzymniveau)
+    # We koppelen dit aan de maximale alfa_ads
+    base_leak = 0.001 # 0.1% basale expressie
+    return p.alfa_ads * (base_leak + (1 - base_leak) * e_mal)
 end
 
 function fbaUpdate!(u, p::Parameters)
-    # --- EXTRACTIE ---
     S_subs = u[p.ind_subs]
     e_enz  = u[p.ind_e]
 
-    # --- 1. CYBERNETICA ---
     f = getMonod(S_subs, p)
     R = getRate(f, p)
-    u_cyt = getU_cyt(R, p)
-    v_cyt = getV_cyt(R) # <--- De rode lijn zou nu moeten verdwijnen
+    v_cyt = getV_cyt(R)
 
-    # --- 2. FBA ---
     for i in 1:length(p.ind_subs)
         id = p.ex_ids[i]
         if haskey(p.fbaModel.reactions, id)
-            p.fbaModel.reactions[id].lower_bound = -R[i] * e_enz[i] * v_cyt[i]
+            # De theoretische maximale opname op basis van enzymen en kinetiek
+            v_max_enz = R[i] * (e_enz[i] + 1e-3) * v_cyt[i]
+            
+            # De numerieke veiligheidsgrens: 
+            # Je kunt nooit meer opnemen dan er in het medium aanwezig is.
+            # We delen door dt (of een kleine factor) om de flux te beperken.
+            v_max_available = S_subs[i] / (p.E_coli_cellDW * getTotalBiomass(u, p) + 1e-10)
+            
+            # De uiteindelijke constraint is de kleinste van de twee
+            p.fbaModel.reactions[id].lower_bound = -min(v_max_enz, v_max_available)
+            
+            # Harde veiligheid: als S onder een drempelwaarde komt, mag er niks meer in
+            if S_subs[i] <= 0.0
+                 p.fbaModel.reactions[id].lower_bound = 0.0
+            end
         end
     end
 
     sol = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
 
-    # Update mu en q
     if !isnothing(sol) && haskey(sol.fluxes, p.biomass_id)
         p.mu = sol.fluxes[p.biomass_id]
         p.q  = getFluxes(sol, p.ex_ids)
