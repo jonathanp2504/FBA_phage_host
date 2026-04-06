@@ -31,13 +31,20 @@ mutable struct Parameters
     ind_L::Int64
     ind_P::Int64
     infection_time::Float64
+
+    # benzonase parameters
+    ind_Benz::Int      # De index in vector u
+    benz_id::String    # Het ID van de reactie in de FBA
+    k_tox::Float64     # Toxiciteitscoëfficiënt
+    beta_benz::Float64 # Afbraaksnelheid enzym
+    q_benz::Float64    # Opslag voor de berekende flux
 end
 
 # Berekent de lokale MOI (phi): de verhouding tussen infectiesnelheid en groeisnelheid
 function getPhi(u, p::Parameters)
     alfa_eff = getAlfa_eff(u, p)
     P_phage = u[p.ind_P]
-    return (alfa_eff * P_phage) * p.delta_t_exp
+    return (alfa_eff * P_phage) * 0.1
 end
 
 # Berekent de kans op lysogenie op basis van phi
@@ -78,37 +85,60 @@ function fbaUpdate!(u, p::Parameters)
     S_subs = u[p.ind_subs]
     e_enz  = u[p.ind_e]
 
+    # --- 1. CYBERNETISCHE BEREKENINGEN ---
     f = getMonod(S_subs, p)
     R = getRate(f, p)
     v_cyt = getV_cyt(R)
 
+    # --- 2. CONSTRAINTS UPDATEN VOOR ELK SUBSTRAAT ---
     for i in 1:length(p.ind_subs)
         id = p.ex_ids[i]
+        conc = S_subs[i]
+        
         if haskey(p.fbaModel.reactions, id)
-            # De theoretische maximale opname op basis van enzymen en kinetiek
-            v_max_enz = R[i] * (e_enz[i] + 1e-3) * v_cyt[i]
-            
-            # De numerieke veiligheidsgrens: 
-            # Je kunt nooit meer opnemen dan er in het medium aanwezig is.
-            # We delen door dt (of een kleine factor) om de flux te beperken.
-            v_max_available = S_subs[i] / (p.E_coli_cellDW * getTotalBiomass(u, p) + 1e-10)
-            
-            # De uiteindelijke constraint is de kleinste van de twee
-            p.fbaModel.reactions[id].lower_bound = -min(v_max_enz, v_max_available)
-            
-            # Harde veiligheid: als S onder een drempelwaarde komt, mag er niks meer in
-            if S_subs[i] <= 0.0
-                 p.fbaModel.reactions[id].lower_bound = 0.0
+            # Check of er suiker aanwezig is (bijv. na lysis)
+            if conc > 1e-7  
+                # De theoretische opname op basis van kinetiek en enzymen
+                # We gebruiken hier e_enz[i] (cybernetische e) en v_cyt
+                v_max_kin = R[i] * (e_enz[i] + 1e-3) * v_cyt[i]
+                
+                # Numerieke veiligheid: nooit meer opnemen dan er fysiek is
+                # (S_subs / (biomassa * dt)) - we houden het simpel:
+                v_max_available = conc / (p.E_coli_cellDW * getTotalBiomass(u, p) + 1e-10)
+                
+                # De lower_bound is negatief voor opname
+                p.fbaModel.reactions[id].lower_bound = -min(v_max_kin, v_max_available)
+            else
+                # Als conc echt 0 is (of lager door afronding), mag er niks in
+                p.fbaModel.reactions[id].lower_bound = 0.0
             end
         end
     end
+    # --- NIEUW: BENZONASE PRODUCTIE FORCEEREN ---
+    L_cell = u[p.ind_L]
+    X_tot = getTotalBiomass(u, p)
+    lysogen_fraction = L_cell / (X_tot + 1e-10)
 
+    # We definiëren een productie-snelheid (mmol per gram bacterie per uur)
+    # Hoe meer lysogenen, hoe hoger de collectieve 'vraag' in het FBA model
+    k_prod = 2  # Tweak deze waarde voor meer/minder opbrengst
+    
+    if haskey(p.fbaModel.reactions, p.benz_id)
+        # De lower_bound dwingt de FBA om Benzonase te maken
+        p.fbaModel.reactions[p.benz_id].lower_bound = k_prod * lysogen_fraction
+    end
+    # --- 3. FBA OPLOSSEN ---
+    # Gebruik een try-catch of check isnothing om crashes bij onoplosbaarheid te voorkomen
     sol = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
 
     if !isnothing(sol) && haskey(sol.fluxes, p.biomass_id)
         p.mu = sol.fluxes[p.biomass_id]
         p.q  = getFluxes(sol, p.ex_ids)
+        p.q_benz = sol.fluxes[p.benz_id]
     else 
-        p.mu = 0.0; p.q .= 0.0
+        # Als de cel niet kan groeien (bijv. geen suikers), mu op 0
+        p.mu = 0.0
+        p.q .= 0.0
+        p.q_benz = 0.0
     end
 end

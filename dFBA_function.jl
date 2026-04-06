@@ -4,7 +4,7 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     S_subs = u[p.ind_subs]
     e_enz  = u[p.ind_e]
     S_cell, I_cell, L_cell, P_phage = u[p.ind_S], u[p.ind_I], u[p.ind_L], u[p.ind_P]
-
+    C_benz = u[p.ind_Benz] # De 13e variabele in u is de benzonase concentratie
     # --- 1. CYBERNETICA ---
     f = getMonod(S_subs, p)
     R = getRate(f, p)
@@ -12,7 +12,7 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     v_cyt = getV_cyt(R) # <--- De rode lijn zou nu moeten verdwijnen
 
    
-    phi = getPhi(P_phage, p)
+    phi = getPhi(u, p)
     prob_lys = getProbLys(phi)
     
     X_tot                 = getTotalBiomass(u, p)
@@ -20,30 +20,44 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     nieuwe_infectie_flux  = getNewInfectionFlux(u, p)
     u_p = h(p, t - p.tau)
     lysis_term = t > p.tau ? getNewInfectionFlux(u_p, p) : 0.0
+    mu_safe = max(0.0, p.mu) # Zorg dat groeisnelheid niet negatief wordt, met toevoeging van mu_safe crasht simulatie
+    # --- 2. TOXICITEIT BEREKENEN ---
+    # We berekenen de sterfte door Benzonase
+    toxic_death_L = p.k_tox * C_benz * L_cell
+    toxic_death_S = (p.k_tox * 0.1) * C_benz * S_cell # S is minder gevoelig
     # 4. DIFFERENTIAALVERGELIJKINGEN  
     for i in 1:length(p.ind_subs)
         sub_idx = p.ind_subs[i]
         enz_idx = p.ind_e[i]
 
-        # FIX: Voorkom negatieve du als S al bijna 0 is
-        if S_subs[i] < 1e-7 && p.q[i] >= 0 # q is negatief voor opname
+        # VERBETERDE LOGICA:
+        # We laten de opname altijd toe, tenzij het substraat écht op is EN 
+        # de FBA geen opname meer voorschrijft (p.q[i] >= 0).
+        # Als er door lysis weer glucose bijkomt (S_subs[i] > 1e-7), 
+        # zal de term p.q[i] * ... weer negatief worden en de glucose doen dalen.
+        
+        if S_subs[i] < 1e-8 && p.q[i] >= 0
              du[sub_idx] = 0.0
         else
              du[sub_idx] = p.q[i] * p.E_coli_cellDW * X_tot 
         end
         
+        # Glucose vrijgave bij lysis (enkel voor index 1 = glucose)
         if i == 1
             du[sub_idx] += p.h_release * lysis_term
         end
 
-        du[enz_idx] = p.alpha_syn * f[i] * u_cyt[i] - p.beta_deg * e_enz[i]
+        du[enz_idx] = p.alpha_syn * f[i] * u_cyt[i] - p.beta_deg* e_enz[i] + 0.001 # kleine basale expressie zodat er altijd een beetje enzym is (voor snelle adaptatie bij nieuwe substraat beschikbaar)
     end
 
     # Faag-Host interactie
-    du[p.ind_S] = p.mu * S_cell - nieuwe_infectie_flux
+    du[p.ind_S] = p.mu * S_cell - nieuwe_infectie_flux - toxic_death_S
     du[p.ind_I] = (1 - prob_lys) * nieuwe_infectie_flux - lysis_term
-    du[p.ind_L] = p.mu * L_cell + (prob_lys * nieuwe_infectie_flux) # raar dat er geen overshoot is van total X wat vreemd is, waarschijnlijk iets te maken met getphi ---> bekijk voor alternatief (misschien op andere manier doen, zonder growth speed initieel)
-    du[p.ind_P] = (p.b * lysis_term) - totaal_adsorptie_flux
+    du[p.ind_L] = p.mu * L_cell + (prob_lys * nieuwe_infectie_flux) - toxic_death_L # raar dat er geen overshoot is van total X wat vreemd is, waarschijnlijk iets te maken met getphi ---> bekijk voor alternatief (misschien op andere manier doen, zonder growth speed initieel)
+    du[p.ind_P] = (p.b * lysis_term) - totaal_adsorptie_flux 
+    # --- 4. BENZONASE BALANS ---
+    # Productie (via p.q_benz uit FBA) minus afbraak
+    du[p.ind_Benz] = (p.q_benz * p.E_coli_cellDW * X_tot) - (p.beta_benz * C_benz)
 end
 
 function getMonod(substrates::Vector{Float64}, parameters::Parameters)::Vector{Float64}
