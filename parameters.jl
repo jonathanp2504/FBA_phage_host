@@ -62,6 +62,9 @@ mutable struct Parameters
 
     mu_max::Vector{Float64}   # [1.33, 1.26, 1.10, 0.29]
     e_max::Vector{Float64}    # Wordt berekend bij start
+
+    f_prod::Float64   # Fractie van de groei opgeofferd aan Benzonase (bijv. 0.2 voor 20%)
+    Y_benz::Float64   # Opbrengstcoëfficiënt: mmol Benzonase per gDW groei-verlies
 end
 
 

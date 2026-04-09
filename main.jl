@@ -51,24 +51,24 @@ benz_stoich = Dict(
 # 2. De Metabolite toevoegen
 # We maken een 'leeg' object en vullen alleen de ID in. 
 # Dit omzeilt de complexe constructor-argumenten.
-model.metabolites["M_benzonase_c"] = AbstractFBCModels.CanonicalModel.Metabolite()
+#model.metabolites["M_benzonase_c"] = AbstractFBCModels.CanonicalModel.Metabolite()
 # Nu vullen we de velden handmatig in
-m = model.metabolites["M_benzonase_c"]
-m.name = "Benzonase"
-m.compartment = "c"
+#m = model.metabolites["M_benzonase_c"]
+#m.name = "Benzonase"
+#m.compartment = "c"
 
 # 3. De Reactie toevoegen
-model.reactions["R_BENZ_prod"] = AbstractFBCModels.CanonicalModel.Reaction()
-r = model.reactions["R_BENZ_prod"]
-r.name = "Benzonase production"
-r.stoichiometry = benz_stoich
-r.lower_bound = 0.0
-r.upper_bound = 1000.0
+#model.reactions["R_BENZ_prod"] = AbstractFBCModels.CanonicalModel.Reaction()
+#r = model.reactions["R_BENZ_prod"]
+#r.name = "Benzonase production"
+#r.stoichiometry = benz_stoich
+#r.lower_bound = 0.0
+#r.upper_bound = 1000.0
 
 # 5. Nu pas converteren naar CanonicalModel voor je solver
 # De docs geven aan dat CanonicalModel sneller is voor grote berekeningen
 # maar minder vriendelijk voor aanpassingen.
-final_model = convert(AbstractFBCModels.CanonicalModel.Model, model)
+model = convert(AbstractFBCModels.CanonicalModel.Model, load_model(model_path))
 model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].lower_bound = 0.0 # bacterial growth is constrained!!!
 #model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].upper_bound = 2.0 # [1/h] moet bovenlimiet op staan anders te hoog
 # 2. Cybernetische Parameters 
@@ -143,8 +143,10 @@ p = Parameters(
     0.1,            # beta_benz
     0.0,            # q_benz start op 0    
     mu_max_vector,  # DE NIEUWE VECTOR
-    e_max_vector    # DE NIEUWE VECTOR
-)
+    e_max_vector,    # DE NIEUWE VECTOR
+    0.2,   # f_prod: 20% van de groei gaat naar Benzonase
+    5.0,   # Y_benz: Voor elke gram 'verloren' groei maken we 5 mmol Benzonase (fictief)
+    )
 
 include("./dFBA_function.jl")
 # 5. INITIALISATIE

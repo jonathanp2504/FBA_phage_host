@@ -16,7 +16,9 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     v_cyt = getV_cyt(R)
 
     X_tot = getTotalBiomass(u, p)
-
+    # --- 1. GROWTH WITH BURDEN ---
+    # De effectieve groei van de lysogenen is lager door de productie-last
+    mu_eff_l = p.mu_l * (1 - p.f_prod)
     # Naive cells
     du[Nind] = p.mu_N * u[Nind] # growth
     du[Nind] -= p.k_inject * u[Paind] * u[Nind]/X_tot # infection --> N -> D
@@ -31,7 +33,8 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
 
     # Lysogenic cells
     du[lind] = getProbLys(u, p) * p.k_inject * uDecision[Paind] * uDecision[Nind]/getTotalBiomass(uDecision, p) # D -> l
-    du[lind] += p.mu_l * u[lind] # growth of lysogens
+    du[lind] += mu_eff_l * u[lind] # growth of lysogens
+    du[lind] -= p.k_tox * u[lind] # extra sterfte door Benzonase toxiciteit
 
     # MOI 
     du[MOIind] = p.k_inject * u[Paind] / X_tot
@@ -102,9 +105,12 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     end
 
     # --- 4. BENZONASE BALANS ---
-    # --- 5. BENZONASE PRODUCTIE ---
-    # Alleen de lysogenen (u[lind]) dragen bij
-    productie_benz = p.q_benz_l * p.E_coli_cellDW * u[lind]
+    # --- 3. BENZONASE PRODUCTIE ---
+    # Productie is evenredig aan het groeiverlies: (mu_ruw - mu_eff) * biomassa * Yield
+    # Hoe sneller de cel zou kúnnen groeien, hoe meer Benzonase hij maakt.
+    groeiverlies = (p.mu_l - mu_eff_l) 
+    productie_benz = groeiverlies * u[lind] * p.Y_benz 
+
     du[Benzind] = productie_benz - (p.beta_benz * u[Benzind])
 end
 

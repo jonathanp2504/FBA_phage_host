@@ -9,10 +9,6 @@ function fbaUpdate!(u, p::Parameters)
     X_tot  = getTotalBiomass(u, p)
     dt_fba = 10/60 
 
-    if haskey(p.fbaModel.reactions, "R_ATPM")
-        p.fbaModel.reactions["R_ATPM"].lower_bound = 0.0
-    end
-
     # --- 1. GEMEENSCHAPPELIJKE CONSTRAINTS ---
     f = getMonod(S_subs, p)
     R = getRate(f, p)
@@ -31,41 +27,25 @@ function fbaUpdate!(u, p::Parameters)
         end
     end
 
-    # --- 2. SCENARIO A: NAÏEF ---
+    # We berekenen nu maar één optimaal groeiscenario op basis van beschikbare suikers
+    # Geen Benzonase-eisen meer in de FBA!
     if haskey(p.fbaModel.reactions, p.benz_id)
         p.fbaModel.reactions[p.benz_id].lower_bound = 0.0
         p.fbaModel.reactions[p.benz_id].upper_bound = 0.0
     end
-    sol_N = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
-    
-    if !isnothing(sol_N) && !isempty(sol_N.fluxes)
-        p.mu_N = sol_N.fluxes[p.biomass_id]
-        p.q_N  = getFluxes(sol_N, p.ex_ids)
+
+    sol = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
+
+    if !isnothing(sol) && !isempty(sol.fluxes)
+        # De 'ruwe' groei en opname die de cel KAN halen
+        p.mu_N = sol.fluxes[p.biomass_id]
+        p.q_N  = getFluxes(sol, p.ex_ids)
+        
+        # Voor de lysogenen gebruiken we dezelfde basis, de 'straf' passen we toe in de ODE
+        p.mu_l = p.mu_N 
+        p.q_l  = p.q_N
     else 
         p.mu_N = 0.0; p.q_N .= 0.0
-    end
-
-    # --- 3. SCENARIO B: LYSOGEEN ---
-    if haskey(p.fbaModel.reactions, p.biomass_id)
-        p.fbaModel.reactions[p.biomass_id].lower_bound = 0.0
-    end
-
-    k_prod = 0.5 
-    if haskey(p.fbaModel.reactions, p.benz_id)
-        p.fbaModel.reactions[p.benz_id].lower_bound = k_prod 
-        p.fbaModel.reactions[p.benz_id].upper_bound = 1000.0
-    end
-
-    sol_l = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
-
-    if !isnothing(sol_l) && !isempty(sol_l.fluxes)
-        p.mu_l = sol_l.fluxes[p.biomass_id]
-        p.q_l  = getFluxes(sol_l, p.ex_ids)
-        p.q_benz_l = sol_l.fluxes[p.benz_id]
-    else 
-        # Als hij hier komt, is hij nog steeds Infeasible. 
-        # Dit betekent dat de cel op dit moment niet genoeg suiker KAN opnemen
-        # om die 0.001 te maken. Check je u0 voor de enzymen!
-        p.mu_l = 0.0; p.q_l .= 0.0; p.q_benz_l = 0.0
+        p.mu_l = 0.0; p.q_l .= 0.0
     end
 end
