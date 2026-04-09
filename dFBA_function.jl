@@ -45,7 +45,8 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     # Attached phages
     du[Paind] = p.k_attach * X_tot * u[Pfind] # attachment
     du[Paind] -= p.k_dettach * u[Paind] # dettachment
-    du[Paind] -= p.k_inject * u[Paind] # injection    
+    du[Paind] -= p.k_inject * u[Paind] # injection   
+    
     # 4. DIFFERENTIAALVERGELIJKINGEN  
     for i in eachindex(Sind)
         sub_idx = Sind[i]

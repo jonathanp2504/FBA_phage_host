@@ -40,7 +40,6 @@ mutable struct Parameters
     q::Vector{Float64}
 
     # --- NIEUWE ADSORPTIE PARAMETERS (LADDER) ---
-    max_phages::Int64    # Hoeveel fagen kunnen er op 1 cel? (bijv. 10)
     k_attach::Float64        # Binding rate (L / gDW / h) - voorheen alfa_ads
     k_dettach::Float64       # Loskoppelingsrate (1/h)
     k_inject::Float64       # Injectierate (1/h) - de stap van S_i naar I

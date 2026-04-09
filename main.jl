@@ -70,7 +70,6 @@ p = Parameters(
     zeros(4),       # q start op 0
 
     # Adsorption Ladder (Sequential Model)
-    max_phages,     # 10
     1e-10,          # k_on (jouw alfa_ads)
     10.0,           # k_off (1/h) -> Faag valt relatief snel los
     5.0,            # k_ins (1/h) -> Gemiddeld 12 min voor injectie
