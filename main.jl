@@ -81,7 +81,7 @@ alfa_ads = 1e-10  # Adsorptieconstante (L/gDW/h) lager dan bij Luan want eigenli
 p_pref = [0.8925, 0.08925,  0.008925,  0.008925] # Voorkeurshiërarchie uit thesis
 V_max = [12.7, 3.75, 0.0, 4.0]           # Opnamesnelheden (mmol/hr^-1)
 E_coli_cellDW = 1.0e-12 # gDW per cel
-infection_time = 2.0 # Tijdstip van infectie (uren)
+infection_time = 1.0 # Tijdstip van infectie (uren)
 essentials_ids = ["R_EX_o2_e", "R_EX_nh4_e", "R_EX_pi_e", "R_EX_so4_e", "R_EX_k_e", "R_EX_mg2_e", "R_EX_ca2_e", "R_EX_cl_e", "R_EX_fe2_e", "R_EX_fe3_e", "R_EX_mn2_e", "R_EX_zn2_e", "R_EX_cu2_e", "R_EX_cobalt2_e", "R_EX_mobd_e", "R_EX_thi_e", "R_EX_ni2_e", "R_EX_sel_e", "R_EX_slnt_e", "R_EX_tungs_e"]
 exchange_ids   = ["R_EX_glc__D_e", "R_EX_malt_e", "R_EX_glyc_e", "R_EX_ac_e"]
 all_ex_ids     = [id for id in keys(model.reactions) if startswith(id, "R_EX_")]
@@ -139,7 +139,7 @@ p = Parameters(
 
     
     "R_BENZ_prod", 
-    0.05,           # k_tox
+    0.1,           # k_tox
     0.1,            # beta_benz
     0.0,            # q_benz start op 0    
     mu_max_vector,  # DE NIEUWE VECTOR

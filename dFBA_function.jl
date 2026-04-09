@@ -14,41 +14,47 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     R = getRate(f, p)
     u_cyt = getU_cyt(R, p)
     v_cyt = getV_cyt(R)
-
+    f_receptor = getReceptorFactor(u, p)
     X_tot = getTotalBiomass(u, p)
+    # --- EFFECTIEVE RATIO'S ---
+    # De effectieve binding is nu afhankelijk van de aanwezige receptoren
+    k_attach_eff = p.k_attach * f_receptor
+    
+    # De injectie (N -> D) gebeurt ook alleen als de fagen een 'ingang' vinden
+    k_inject_eff = p.k_inject * f_receptor
     # --- 1. GROWTH WITH BURDEN ---
     # De effectieve groei van de lysogenen is lager door de productie-last
     mu_eff_l = p.mu_l * (1 - p.f_prod)
     # Naive cells
     du[Nind] = p.mu_N * u[Nind] # growth
-    du[Nind] -= p.k_inject * u[Paind] * u[Nind]/X_tot # infection --> N -> D
+    du[Nind] -= k_inject_eff * u[Paind] * u[Nind]/X_tot # N -> D
 
     # Deciding cells 
-    du[Dind] = p.k_inject * u[Paind] * u[Nind]/X_tot # N -> D
-    du[Dind] -= p.k_inject * uDecision[Paind] * uDecision[Nind]/getTotalBiomass(uDecision, p) # D -> L of l
+    du[Dind] = k_inject_eff * u[Paind] * u[Nind]/X_tot # N -> D
+    du[Dind] -= k_inject_eff * uDecision[Paind] * uDecision[Nind]/getTotalBiomass(uDecision, p) # D -> L or l
 
     # Lytic cells
-    du[Lind] = (1-getProbLys(u, p)) * p.k_inject * uDecision[Paind] * uDecision[Nind]/getTotalBiomass(uDecision, p) # D -> L
-    du[Lind] -= (1-getProbLys(uDecision, p)) * p.k_inject * uLysis[Paind] * uLysis[Nind]/getTotalBiomass(uLysis, p) # L -> (lysis)
+    du[Lind] = (1-getProbLys(u, p)) * k_inject_eff * uDecision[Paind] * uDecision[Nind]/getTotalBiomass(uDecision, p) # D -> L
+    du[Lind] -= (1-getProbLys(uDecision, p)) * k_inject_eff * uLysis[Paind] * uLysis[Nind]/getTotalBiomass(uLysis, p) # L -> (lysis)
 
     # Lysogenic cells
-    du[lind] = getProbLys(u, p) * p.k_inject * uDecision[Paind] * uDecision[Nind]/getTotalBiomass(uDecision, p) # D -> l
+    du[lind] = getProbLys(u, p) * k_inject_eff * uDecision[Paind] * uDecision[Nind]/getTotalBiomass(uDecision, p) # D -> l
     du[lind] += mu_eff_l * u[lind] # growth of lysogens
     du[lind] -= p.k_tox * u[lind] # extra sterfte door Benzonase toxiciteit
 
     # MOI 
-    du[MOIind] = p.k_inject * u[Paind] / X_tot
-    du[MOIind] -= p.k_inject * uDecision[Paind] / getTotalBiomass(uDecision, p)
+    du[MOIind] = k_inject_eff * u[Paind] / X_tot
+    du[MOIind] -= k_inject_eff * uDecision[Paind] / getTotalBiomass(uDecision, p)
 
     # Free phages
     du[Pfind] = p.b * (1-getProbLys(uDecision, p)) * p.k_inject * uLysis[Paind] * uLysis[Nind]/getTotalBiomass(uLysis, p)
-    du[Pfind] -= p.k_attach * X_tot * u[Pfind] # attachment
+    du[Pfind] -= k_attach_eff * X_tot * u[Pfind] # attachment
     du[Pfind] += p.k_dettach * u[Paind] # dettachment
 
     # Attached phages
-    du[Paind] = p.k_attach * X_tot * u[Pfind] # attachment
+    du[Paind] = k_attach_eff * X_tot * u[Pfind] # attachment
     du[Paind] -= p.k_dettach * u[Paind] # dettachment
-    du[Paind] -= p.k_inject * u[Paind] # injection   
+    du[Paind] -= k_inject_eff * u[Paind] # injection   
     
     # 4. DIFFERENTIAALVERGELIJKINGEN  
     for i in eachindex(Sind)
@@ -111,7 +117,7 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     groeiverlies = (p.mu_l - mu_eff_l) 
     productie_benz = groeiverlies * u[lind] * p.Y_benz 
 
-    du[Benzind] = productie_benz - (p.beta_benz * u[Benzind])
+    du[Benzind] = productie_benz #- (p.beta_benz * u[Benzind])
 end
 
 function getMonod(substrates::Vector{Float64}, parameters::Parameters)::Vector{Float64}
@@ -148,4 +154,14 @@ function getFluxes(sol, ids::Vector{String})::Vector{Float64}
         end
     end
     return flux_vector
+end
+
+function getReceptorFactor(u, p::Parameters)
+    # Eind[2] is de index voor maltose-enzymen (e_mal)
+    e_mal = u[Eind[2]] 
+    
+    # We gebruiken een kleine 'leak' (1e-4) omdat een cel vaak 
+    # een heel klein beetje LamB heeft, zelfs zonder maltose.
+    # p.K_mal is de verzadigingsconstante voor de fagen op de receptor.
+    return (e_mal + 1e-4) / (p.K_mal + e_mal)
 end
