@@ -6,61 +6,66 @@ import SBMLFBCModels
 function fbaUpdate!(u, p::Parameters)
     S_subs = u[Sind]
     e_enz  = u[Eind]
-   
-    # --- 1. CYBERNETISCHE BEREKENINGEN ---
+    X_tot  = getTotalBiomass(u, p)
+    dt_fba = 10/60 
+
+    if haskey(p.fbaModel.reactions, "R_ATPM")
+        p.fbaModel.reactions["R_ATPM"].lower_bound = 0.0
+    end
+
+    # --- 1. GEMEENSCHAPPELIJKE CONSTRAINTS ---
     f = getMonod(S_subs, p)
     R = getRate(f, p)
     v_cyt = getV_cyt(R)
 
-    # --- 2. CONSTRAINTS UPDATEN VOOR ELK SUBSTRAAT ---
     for i in eachindex(Sind)
         id = p.ex_ids[i]
         conc = S_subs[i]
-        
         if haskey(p.fbaModel.reactions, id)
-            # Check of er suiker aanwezig is (bijv. na lysis)
-            if conc > 1e-7  
-                # De theoretische opname op basis van kinetiek en enzymen
-                # We gebruiken hier e_enz[i] (cybernetische e) en v_cyt
-                v_max_kin = R[i] * (e_enz[i] + 1e-3) * v_cyt[i]
-                
-                # Numerieke veiligheid: nooit meer opnemen dan er fysiek is
-                # (S_subs / (biomassa * dt)) - we houden het simpel:
-                v_max_available =  conc / (p.E_coli_cellDW * getTotalBiomass(u, p) + 1e-10)
-                
-                # De lower_bound is negatief voor opname
-                p.fbaModel.reactions[id].lower_bound = -min(v_max_kin, v_max_available)
-            else
-                # Als conc echt 0 is (of lager door afronding), mag er niks in
-                p.fbaModel.reactions[id].lower_bound = 0.0
-            end
+            e_relatief = e_enz[i] / p.e_max[i]
+            v_max_kin = R[i] * e_relatief * v_cyt[i]
+            v_max_fysiek = conc / (p.E_coli_cellDW * X_tot * dt_fba + 1e-10)
+            
+            # Dit blijft staan zoals je wilde: strikt kinetisch/fysisch
+            p.fbaModel.reactions[id].lower_bound = -min(v_max_kin, v_max_fysiek)
         end
     end
-    # --- NIEUW: BENZONASE PRODUCTIE FORCEEREN ---
-    L_cell = u[lind]
-    X_tot = getTotalBiomass(u, p)
-    lysogen_fraction = L_cell / (X_tot + 1e-10)
 
-    # We definiëren een productie-snelheid (mmol per gram bacterie per uur)
-    # Hoe meer lysogenen, hoe hoger de collectieve 'vraag' in het FBA model
-    k_prod = 2  # Tweak deze waarde voor meer/minder opbrengst
-    
+    # --- 2. SCENARIO A: NAÏEF ---
     if haskey(p.fbaModel.reactions, p.benz_id)
-        # De lower_bound dwingt de FBA om Benzonase te maken
-        p.fbaModel.reactions[p.benz_id].lower_bound = k_prod * lysogen_fraction
+        p.fbaModel.reactions[p.benz_id].lower_bound = 0.0
+        p.fbaModel.reactions[p.benz_id].upper_bound = 0.0
     end
-    # --- 3. FBA OPLOSSEN ---
-    # Gebruik een try-catch of check isnothing om crashes bij onoplosbaarheid te voorkomen
-    sol = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
-
-    if !isnothing(sol) && haskey(sol.fluxes, p.biomass_id)
-        p.mu = sol.fluxes[p.biomass_id]
-        p.q  = getFluxes(sol, p.ex_ids)
-        #p.q_benz = sol.fluxes[Benzind]
+    sol_N = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
+    
+    if !isnothing(sol_N) && !isempty(sol_N.fluxes)
+        p.mu_N = sol_N.fluxes[p.biomass_id]
+        p.q_N  = getFluxes(sol_N, p.ex_ids)
     else 
-        # Als de cel niet kan groeien (bijv. geen suikers), mu op 0
-        p.mu = 0.0
-        p.q .= 0.0
-        p.q_benz = 0.0
+        p.mu_N = 0.0; p.q_N .= 0.0
+    end
+
+    # --- 3. SCENARIO B: LYSOGEEN ---
+    if haskey(p.fbaModel.reactions, p.biomass_id)
+        p.fbaModel.reactions[p.biomass_id].lower_bound = 0.0
+    end
+
+    k_prod = 0.5 
+    if haskey(p.fbaModel.reactions, p.benz_id)
+        p.fbaModel.reactions[p.benz_id].lower_bound = k_prod 
+        p.fbaModel.reactions[p.benz_id].upper_bound = 1000.0
+    end
+
+    sol_l = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
+
+    if !isnothing(sol_l) && !isempty(sol_l.fluxes)
+        p.mu_l = sol_l.fluxes[p.biomass_id]
+        p.q_l  = getFluxes(sol_l, p.ex_ids)
+        p.q_benz_l = sol_l.fluxes[p.benz_id]
+    else 
+        # Als hij hier komt, is hij nog steeds Infeasible. 
+        # Dit betekent dat de cel op dit moment niet genoeg suiker KAN opnemen
+        # om die 0.001 te maken. Check je u0 voor de enzymen!
+        p.mu_l = 0.0; p.q_l .= 0.0; p.q_benz_l = 0.0
     end
 end

@@ -20,18 +20,29 @@ function plotPhages(sol)
     return plot(sol, idxs=[Pfind, Paind], label=["Free phages" "Attached Phages"], title="Fagen (P)", yscale=:log10, ylims=(1,:auto),
         lw=2, xlabel= "t [h]", ylabel="phages [1/L]")
 end
-
+function plotBenzonase(sol)
+    return plot(sol, idxs=Benzind, 
+          title="Benzonase Accumulatie", 
+          color=:forestgreen, lw=2, 
+          xlabel="t [h]", ylabel="Conc. [mmol/L]",
+          label="Benzonase",
+          fill=(0, 0.2, :green)) # Geeft een mooi schaduweffect onder de lijn
+end
 function plotAll(sol, p)
     p1 = plotSubstrates(sol)
     p2 = plotEnzymes(sol)
     p3 = plotPopulation(sol, p)
     p4 = plotPhages(sol)
-    return plot(p1, p2, p3, p4, 
-                  layout=(2, 2), 
-                  size=(800, 800), # Iets groter gemaakt voor de leesbaarheid
-                  margin=5Plots.mm)
-end
+    p5 = plotBenzonase(sol)
+    
+    # We maken een 'leeg' plotje voor het evenwicht in de grid
+    p_empty = plot(grid=false, xaxis=false, yaxis=false, ticks=false)
 
+    return plot(p1, p2, p3, p4, p5, p_empty,
+                layout=(3, 2), 
+                size=(900, 1000), 
+                margin=5Plots.mm)
+end
 #= Plot E: Benzonase Accumulatie
 p5 = plot(sol, idxs=Benzind, title="Benzonase Productie", 
           color=:green, lw=2, 

@@ -35,9 +35,15 @@ mutable struct Parameters
     ex_ids::Vector{String}
     all_exchanges::Vector{String}
     essentials::Vector{String}
-    fbaModel
-    mu::Float64
-    q::Vector{Float64}
+    fbaModel::Any
+    # Resultaten voor Naïeve cellen (N)
+    mu_N::Float64
+    q_N::Vector{Float64}
+
+    # Resultaten voor Lysogene cellen (l)
+    mu_l::Float64
+    q_l::Vector{Float64}
+    q_benz_l::Float64  # Alleen de lysogenen produceren benzonase
 
     # --- NIEUWE ADSORPTIE PARAMETERS (LADDER) ---
     k_attach::Float64        # Binding rate (L / gDW / h) - voorheen alfa_ads
@@ -54,11 +60,8 @@ mutable struct Parameters
     beta_benz::Float64 # Afbraaksnelheid enzym
     q_benz::Float64    # Opslag voor de berekende flux
 
-    # Referentie mu_max waarden uit Luan
-    mu_max_glc::Float64   # 1.33
-    mu_max_mal::Float64   # 1.26
-    mu_max_gly::Float64   # 1.10
-    mu_max_ac::Float64    # 0.29
+    mu_max::Vector{Float64}   # [1.33, 1.26, 1.10, 0.29]
+    e_max::Vector{Float64}    # Wordt berekend bij start
 end
 
 

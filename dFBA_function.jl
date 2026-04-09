@@ -18,7 +18,7 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     X_tot = getTotalBiomass(u, p)
 
     # Naive cells
-    du[Nind] = p.mu * u[Nind] # growth
+    du[Nind] = p.mu_N * u[Nind] # growth
     du[Nind] -= p.k_inject * u[Paind] * u[Nind]/X_tot # infection --> N -> D
 
     # Deciding cells 
@@ -31,7 +31,7 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
 
     # Lysogenic cells
     du[lind] = getProbLys(u, p) * p.k_inject * uDecision[Paind] * uDecision[Nind]/getTotalBiomass(uDecision, p) # D -> l
-    du[lind] += p.mu * u[lind] # growth of lysogens
+    du[lind] += p.mu_l * u[lind] # growth of lysogens
 
     # MOI 
     du[MOIind] = p.k_inject * u[Paind] / X_tot
@@ -63,21 +63,49 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
         #else
              #du[sub_idx] = p.q[i] * p.E_coli_cellDW * X_tot 
         #end
-        # Voorkom dat du[sub_idx] de concentratie negatief maakt
-        flux_val = p.q[i] * p.E_coli_cellDW * X_tot
-        du[sub_idx] = max(0.0, flux_val)
-        
+        # 1. Bereken de flux zoals voorheen
+        # Totale opname = (opname per N-cel * aantal N) + (opname per l-cel * aantal l)
+        # We gebruiken hier u[Nind] en u[lind] in plaats van X_tot
+        # We tellen alle cellen die nog metabool actief zijn mee:
+        # 1. De gezonde cellen (N) + de cellen in transitie (D & L)
+        actieve_vrije_biomassa = u[Nind] + u[Dind] + u[Lind]
+        flux_N = p.q_N[i] * actieve_vrije_biomassa * p.E_coli_cellDW
+    
+        # 2. De lysogene cellen (l) met hun eigen (tragere) opnamesnelheid q_l
+        flux_l = p.q_l[i] * u[lind] * p.E_coli_cellDW
+    
+        flux_totaal = flux_N + flux_l
+        du[sub_idx] = min(0.0, flux_totaal)
+        # 2. De zachte stop (Hill-factor)
+        # K_safe zorgt dat de flux naar 0 gaat als de concentratie bijna 0 is.
+        #K_safe = 1e-4 
+        #soft_stop = u[sub_idx] / (u[sub_idx] + K_safe)
+
+        # 3. Bereken de uiteindelijke verandering
+        #du[sub_idx] = flux_val * soft_stop
+        # Totaal aantal cellen voor de noemer
+        total_cells = u[Nind] + u[Dind] + u[Lind] + u[lind]
+
+        # Alleen N (naïef) en L (lysogeen) dragen bij aan de totale groei
+        # D en I hebben mu = 0, dus die vallen weg uit de teller
+        if total_cells > 1.0
+            mu_avg = (p.mu_N * u[Nind] + p.mu_l * u[lind]) / total_cells
+        else
+            mu_avg = p.mu_N
+        end
         # Glucose vrijgave bij lysis (enkel voor index 1 = glucose)
         if i == 1
             du[sub_idx] += p.h_release * p.k_inject * uLysis[Paind] * uLysis[Nind]/getTotalBiomass(uLysis, p)
         end
 
-        du[enz_idx] = p.alpha_syn * f[i] * u_cyt[i] - p.beta_deg* e_enz[i] + 0.001 # kleine basale expressie zodat er altijd een beetje enzym is (voor snelle adaptatie bij nieuwe substraat beschikbaar)
+        du[enz_idx] = p.alpha_syn * f[i] * u_cyt[i] - (p.beta_deg + mu_avg)* e_enz[i] + 0.001 # kleine basale expressie zodat er altijd een beetje enzym is (voor snelle adaptatie bij nieuwe substraat beschikbaar)
     end
 
     # --- 4. BENZONASE BALANS ---
-    # Productie (via p.q_benz uit FBA) minus afbraak
-    du[Benzind] = (p.q_benz * p.E_coli_cellDW * X_tot) #- (p.beta_benz * C_benz)
+    # --- 5. BENZONASE PRODUCTIE ---
+    # Alleen de lysogenen (u[lind]) dragen bij
+    productie_benz = p.q_benz_l * p.E_coli_cellDW * u[lind]
+    du[Benzind] = productie_benz - (p.beta_benz * u[Benzind])
 end
 
 function getMonod(substrates::Vector{Float64}, parameters::Parameters)::Vector{Float64}

@@ -3,7 +3,10 @@ using Pkg
 #Pkg.add("DifferentialEquations")
 #Pkg.add("DelayDiffEq")
 using Plots
+using COBREXA
+using AbstractFBCModels
 using DifferentialEquations
+import COBREXA: StandardModel, Metabolite, Reaction
 include("./parameters.jl")
 include("./FBA.jl")
 include("./dFBA_function.jl")
@@ -11,11 +14,63 @@ include("./dFBA_function.jl")
 # 1. Model laden
 model_path = joinpath(@__DIR__, "iJO1366.xml")
 @assert isfile(model_path) "iJO1366.xml does not exist at path: $model_path"
-model = convert(AbstractFBCModels.CanonicalModel.Model, load_model(model_path))
+# Gebruik deze dictionary voor je add_reaction!
+benz_stoich = Dict(
+    # Aminozuren (Inputs vanuit het Cytosol, sequentie via uniprot)
+    "M_ala__L_c" => -33.0, 
+    "M_arg__L_c" => -13.0, 
+    "M_asn__L_c" => -22.0, 
+    "M_asp__L_c" => -16.0, 
+    "M_cys__L_c" => -4.0,  
+    "M_gln__L_c" => -12.0, 
+    "M_glu__L_c" => -10.0, 
+    "M_gly_c"    => -21.0, 
+    "M_his__L_c" => -4.0, 
+    "M_ile__L_c" => -8.0,  
+    "M_leu__L_c" => -21.0, 
+    "M_lys__L_c" => -14.0, 
+    "M_met__L_c" => -3.0,  
+    "M_phe__L_c" => -8.0,  
+    "M_pro__L_c" => -10.0, 
+    "M_ser__L_c" => -19.0, 
+    "M_thr__L_c" => -15.0, 
+    "M_trp__L_c" => -5.0,  
+    "M_tyr__L_c" => -10.0, 
+    "M_val__L_c" => -10.0,
 
+    # Energieverbruik (Assemblage: 266 AA * 4 ATP)
+    "M_atp_c"    => -1064.0,
+    "M_h2o_c"    => -1064.0,
+    "M_adp_c"    =>  1064.0,
+    "M_pi_c"     =>  1064.0,
+    "M_h_c"      =>  1064.0,
 
+    # Product (De 'M_benzonase_c' die je zelf aanmaakt)
+    "M_benzonase_c" => 1.0 
+)
+# 2. De Metabolite toevoegen
+# We maken een 'leeg' object en vullen alleen de ID in. 
+# Dit omzeilt de complexe constructor-argumenten.
+model.metabolites["M_benzonase_c"] = AbstractFBCModels.CanonicalModel.Metabolite()
+# Nu vullen we de velden handmatig in
+m = model.metabolites["M_benzonase_c"]
+m.name = "Benzonase"
+m.compartment = "c"
+
+# 3. De Reactie toevoegen
+model.reactions["R_BENZ_prod"] = AbstractFBCModels.CanonicalModel.Reaction()
+r = model.reactions["R_BENZ_prod"]
+r.name = "Benzonase production"
+r.stoichiometry = benz_stoich
+r.lower_bound = 0.0
+r.upper_bound = 1000.0
+
+# 5. Nu pas converteren naar CanonicalModel voor je solver
+# De docs geven aan dat CanonicalModel sneller is voor grote berekeningen
+# maar minder vriendelijk voor aanpassingen.
+final_model = convert(AbstractFBCModels.CanonicalModel.Model, model)
 model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].lower_bound = 0.0 # bacterial growth is constrained!!!
-model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].upper_bound = 2.0 # [1/h] moet bovenlimiet op staan anders te hoog
+#model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].upper_bound = 2.0 # [1/h] moet bovenlimiet op staan anders te hoog
 # 2. Cybernetische Parameters 
 alpha_syn = 0.2*10   # Snelheid van enzymsynthese waardes van deze 2 nog opzoeken (stonden te laag)
 beta_deg = 0.05*10   # Snelheid van enzymdegradatie
@@ -24,14 +79,14 @@ tau = 1.0          # Latente periode (uren)
 b = 170.0          # Burst size
 alfa_ads = 1e-10  # Adsorptieconstante (L/gDW/h) lager dan bij Luan want eigenlijk meer deze waarde voor lambda bij te hoge alfa numerieke problemen), ik wil 2-step want moet voor hoge MOI zoals bij ons uiteindelijk gaat zijn
 p_pref = [0.8925, 0.08925,  0.008925,  0.008925] # Voorkeurshiërarchie uit thesis
-V_max = [15.0, 13.0, 11.0, 4.0]           # Opnamesnelheden (mmol/hr^-1)
-E_coli_cellDW = 2.8e-13 # gDW per cel
-infection_time = 15.0 # Tijdstip van infectie (uren)
+V_max = [12.7, 3.75, 0.0, 4.0]           # Opnamesnelheden (mmol/hr^-1)
+E_coli_cellDW = 1.0e-12 # gDW per cel
+infection_time = 2.0 # Tijdstip van infectie (uren)
 essentials_ids = ["R_EX_o2_e", "R_EX_nh4_e", "R_EX_pi_e", "R_EX_so4_e", "R_EX_k_e", "R_EX_mg2_e", "R_EX_ca2_e", "R_EX_cl_e", "R_EX_fe2_e", "R_EX_fe3_e", "R_EX_mn2_e", "R_EX_zn2_e", "R_EX_cu2_e", "R_EX_cobalt2_e", "R_EX_mobd_e", "R_EX_thi_e", "R_EX_ni2_e", "R_EX_sel_e", "R_EX_slnt_e", "R_EX_tungs_e"]
 exchange_ids   = ["R_EX_glc__D_e", "R_EX_malt_e", "R_EX_glyc_e", "R_EX_ac_e"]
 all_ex_ids     = [id for id in keys(model.reactions) if startswith(id, "R_EX_")]
 MW_values      = [180.16, 342.3, 92.09, 60.05]
-h_release = 0.0#5.66e-12 # glucose vrijgegeven bij lysis (mmol/burst) waarde gebaseerd op Luan table 7
+h_release = 0.0 #6.0e-12 # glucose vrijgegeven bij lysis (mmol/burst) waarde gebaseerd op Luan table 7
 duration = 15.0
 n_hill = 2.0
 # K_mu = 0.2
@@ -41,10 +96,12 @@ mu_max_glc = 1.33
 mu_max_mal = 1.26
 mu_max_gly = 1.10
 mu_max_ac = 0.29
+mu_max_vector = [1.33, 1.26, 1.10, 0.29] 
+# 2. Bereken e_max vector (Steady-state: synthese / (degradatie + groei))
+# Formule: (alpha_syn + delta) / (beta_deg + mu_max)
+e_max_vector = (alpha_syn + 0.001) ./ (beta_deg .+ mu_max_vector)# glc, mal, glyc, ac
 # --- 2. De Struct aanmaken ---
 # Zorg dat de volgorde in je Parameters-file exact matcht met deze aanroep:
-
-
 p = Parameters(
     # Cybernetica
     alpha_syn, 
@@ -66,8 +123,11 @@ p = Parameters(
     all_ex_ids, 
     essentials_ids, 
     model, 
-    0.0,            # mu start op 0
-    zeros(4),       # q start op 0
+    0.0,               # mu_N (startwaarde groei naïef)
+    zeros(4),          # q_N  (startwaarde opname naïef)
+    0.0,               # mu_l (startwaarde groei lysogeen)
+    zeros(4),          # q_l  (startwaarde opname lysogeen)
+    0.0,               # q_benz_l (startwaarde productie benzonase)
 
     # Adsorption Ladder (Sequential Model)
     1e-10,          # k_on (jouw alfa_ads)
@@ -82,12 +142,9 @@ p = Parameters(
     0.05,           # k_tox
     0.1,            # beta_benz
     0.0,            # q_benz start op 0    
-    
-    # Luan Referenties
-    mu_max_glc, 
-    mu_max_mal, 
-    mu_max_gly, 
-    mu_max_ac)
+    mu_max_vector,  # DE NIEUWE VECTOR
+    e_max_vector    # DE NIEUWE VECTOR
+)
 
 include("./dFBA_function.jl")
 # 5. INITIALISATIE
@@ -97,24 +154,6 @@ u0[Sind] = [4.44, 2.337, 5.42, 0.0]    # Subs
 u0[Eind] = [0.95, 0.01, 0.01, 0.01]    # Enzymen
 u0[Nind]   = 1e9                         # S0 (alle cellen beginnen zonder fagen)
 
-# Let op: check in je iJO1366.xml of het "atp_c" of "atp[c]" is!
-benz_stoich = Dict(
-    "M_atp_c" => 0, 
-    "M_h2o_c" => 0, 
-    "M_adp_c" =>  0, 
-    "M_pi_c"  =>  0, 
-    "M_h_c"   =>  0
-)
-
-# 2. Bouw het officiële Reaction object
-benz_reaction = AbstractFBCModels.CanonicalModel.Reaction(
-    stoichiometry = benz_stoich,
-    lower_bound = 0.0,   # Wordt door fbaUpdate aangepast
-    upper_bound = 1000.0
-)
-
-# 3. Voeg het toe aan het model dictionary
-model.reactions["R_BENZ_prod"] = benz_reaction
 fbaUpdate!(u0, p)
 tspan = (0.0, duration) 
 
@@ -134,8 +173,8 @@ domainCallBack = ContinuousCallback(domainCondition, domainAffect!)
 
 prob = DDEProblem(dFBA_phage_system, u0, (p,t)->u0, tspan, p)
 sol = solve(prob, MethodOfSteps(Tsit5()), 
-            reltol=1e-3, # Zet deze weer iets strenger voor detail
-            abstol=1e-5,
+            reltol=1e-4, # Zet deze weer iets strenger voor detail
+            abstol=1e-6,
             maxiters=1e5,
             tstops=[p.infection_time; fbaUpdateTimepoints],
             callback=CallbackSet(infectionCallBack, fbaCallBack, domainCallBack))
