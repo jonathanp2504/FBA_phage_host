@@ -48,27 +48,29 @@ benz_stoich = Dict(
     # Product (De 'M_benzonase_c' die je zelf aanmaakt)
     "M_benzonase_c" => 1.0 
 )
-# 2. De Metabolite toevoegen
-# We maken een 'leeg' object en vullen alleen de ID in. 
-# Dit omzeilt de complexe constructor-argumenten.
+using AbstractFBCModels
+import SBMLFBCModels
+
+# 1. Laad het model (dit geeft een SBMLFBCModel terug)
+raw_model = load_model(model_path)
+
+# 2. Converteer het naar een CanonicalModel om het bewerkbaar te maken
+# Dit lost de MethodError op
+model = convert(AbstractFBCModels.CanonicalModel.Model, raw_model)
+
+# 3. Maak je 'lege' objecten aan voor de toevoegingen
+# We voegen ze direct toe aan de dictionaries van het geconverteerde model
 model.metabolites["M_benzonase_c"] = AbstractFBCModels.CanonicalModel.Metabolite()
-# Nu vullen we de velden handmatig in
-m = model.metabolites["M_benzonase_c"]
-m.name = "Benzonase"
-m.compartment = "c"
+model.metabolites["M_benzonase_c"].name = "Benzonase"
+model.metabolites["M_benzonase_c"].compartment = "c"
 
-# 3. De Reactie toevoegen
 model.reactions["R_BENZ_prod"] = AbstractFBCModels.CanonicalModel.Reaction()
-r = model.reactions["R_BENZ_prod"]
-r.name = "Benzonase production"
-r.stoichiometry = benz_stoich
-r.lower_bound = 0.0
-r.upper_bound = 1000.0
+model.reactions["R_BENZ_prod"].name = "Benzonase production"
+model.reactions["R_BENZ_prod"].lower_bound = 0.0
+model.reactions["R_BENZ_prod"].upper_bound = 1000.0
+model.reactions["R_BENZ_prod"].stoichiometry = benz_stoich # Je Dict
 
-# 5. Nu pas converteren naar CanonicalModel voor je solver
-# De docs geven aan dat CanonicalModel sneller is voor grote berekeningen
-# maar minder vriendelijk voor aanpassingen.
-final_model = convert(AbstractFBCModels.CanonicalModel.Model, model)
+
 model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].lower_bound = 0.0 # bacterial growth is constrained!!!
 #model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].upper_bound = 2.0 # [1/h] moet bovenlimiet op staan anders te hoog
 # 2. Cybernetische Parameters 
@@ -143,9 +145,18 @@ p = Parameters(
     0.1,            # beta_benz
     0.0,            # q_benz start op 0    
     mu_max_vector,  # DE NIEUWE VECTOR
-    e_max_vector    # DE NIEUWE VECTOR
+    e_max_vector,    # DE NIEUWE VECTOR
+    0.001            #f_prod (15% van de totale import wordt opgeofferd aan benzonase productie)
 )
 
+println("--- STOICHIOMETRIE CHECK ---")
+for met_id in keys(benz_stoich)
+    if !haskey(model.metabolites, met_id)
+        println("❌ MISSING: '$met_id' niet gevonden in model!")
+    else
+        println("✅ Found: $met_id")
+    end
+end
 include("./dFBA_function.jl")
 # 5. INITIALISATIE
 # [Glc, Mal, Glyc, Ac, e_glc, e_mal, e_Glyc, e_ac, S, I, L, P, Benz] (subs in mmol/l)
