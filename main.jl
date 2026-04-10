@@ -91,7 +91,7 @@ duration = 15.0
 n_hill = 2.0
 # K_mu = 0.2
 f_res = 0.05
-K_mal = 0.01
+K_mal = 0.2
 mu_max_glc = 1.33
 mu_max_mal = 1.26
 mu_max_gly = 1.10
@@ -170,7 +170,7 @@ fbaCallBack = DiscreteCallback(fbaUpdateCondition, fbaAffect!)
 
 # positive domain
 domainCondition(u, t, integrator) = any(x -> x < 0.0, u)
-domainAffect!(integrator) = map!(v -> max(v, 0.0), integrator.u)
+domainAffect!(integrator) = (integrator.u .= max.(integrator.u, 0.0)) # Zet alle negatieve waarden terug op 0
 domainCallBack = ContinuousCallback(domainCondition, domainAffect!)
 
 prob = DDEProblem(dFBA_phage_system, u0, (p,t)->u0, tspan, p)

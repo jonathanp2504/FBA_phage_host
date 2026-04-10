@@ -159,9 +159,10 @@ end
 function getReceptorFactor(u, p::Parameters)
     # Eind[2] is de index voor maltose-enzymen (e_mal)
     e_mal = u[Eind[2]] 
+    n = 3.0 # Hill-coëfficiënt, bepaalt de scherpte van de overgang
     
     # We gebruiken een kleine 'leak' (1e-4) omdat een cel vaak 
     # een heel klein beetje LamB heeft, zelfs zonder maltose.
     # p.K_mal is de verzadigingsconstante voor de fagen op de receptor.
-    return (e_mal + 1e-4) / (p.K_mal + e_mal)
+    return (e_mal^n + 1e-4) / (p.K_mal^n + e_mal^n)
 end
