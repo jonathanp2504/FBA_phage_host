@@ -58,7 +58,7 @@ function fbaUpdate!(u, p::Parameters)
     geforceerde_benz_flux = totale_import * p.f_prod
     
     if haskey(p.fbaModel.reactions, p.benz_id)
-        p.fbaModel.reactions[p.benz_id].lower_bound = 1e-5
+        p.fbaModel.reactions[p.benz_id].lower_bound = 0.0
         p.fbaModel.reactions[p.benz_id].upper_bound = 1000.0
     end
 
