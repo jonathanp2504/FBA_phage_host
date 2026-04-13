@@ -113,3 +113,13 @@ function getPhages(u, p::Parameters)
     return u[Pfind]
 end
 
+function getMu_avg(p, u)
+    # u[Nind] en u[lind] zijn de actuele aantallen uit de toestandsvector
+    total_cells = u[Nind] + u[lind]
+    
+    if total_cells > 1e-6
+        return (p.mu_N * u[Nind] + p.mu_l * u[lind]) / total_cells
+    else
+        return p.mu_N # Fallback naar gezonde groei
+    end
+end

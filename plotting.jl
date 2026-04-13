@@ -4,9 +4,18 @@ function plotSubstrates(sol)
     return plot(sol, idxs=Sind, title="Substraten (mmol/L)", 
           label=["Glucose" "Maltose" "Glycerol" "Acetaat"], lw=2, xlabel= "t [h]", ylabel="Conc.")
 end
-function plotEnzymes(sol)
-    return plot(sol, idxs=Eind, title="Enzym-niveaus (Cybernetische e)", 
-          label=["e_Glc" "e_Mal" "e_Glyc" "e_Ac"], lw=2, ls=:dash, xlabel= "t [h]", ylabel="Relatief niveau")
+function plotRelEnzymes(sol, p)
+    # sol[p.Eind, :] geeft de absolute waarden
+    # We delen elke rij door de bijbehorende vaste e_max
+    e_abs = sol[Eind, :]
+    e_rel = zeros(size(e_abs))
+    
+    for i in 1:4
+        e_rel[i, :] = e_abs[i, :] ./ p.e_max[i]
+    end
+    
+    plot(sol.t, e_rel', title="Relatieve Enzymniveaus (Vast Plafond)", 
+         label=["e_Glc" "e_Mal" "e_Gly" "e_Ac"], lw=2, ylabel="e / e_max")
 end
 function plotPopulation(sol, p)
     X_totaal_data = [getTotalBiomass(u, p) for u in sol.u]
@@ -30,7 +39,7 @@ function plotBenzonase(sol)
 end
 function plotAll(sol, p)
     p1 = plotSubstrates(sol)
-    p2 = plotEnzymes(sol)
+    p2 = plotRelEnzymes(sol, p)
     p3 = plotPopulation(sol, p)
     p4 = plotPhages(sol)
     p5 = plotBenzonase(sol)

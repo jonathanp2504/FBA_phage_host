@@ -38,13 +38,19 @@ benz_stoich = Dict(
     "M_tyr__L_c" => -10.0, 
     "M_val__L_c" => -10.0,
 
-    # Energieverbruik (Assemblage: 266 AA * 4 ATP)
-    "M_atp_c"    => -1064.0,
+    # Energieverbruik volgens de paper (Totaal 266 AA)
+    # 1. ATP Gedeelte (2 ATP per AA = 532)
+    "M_atp_c"    => -532.0,
+    "M_adp_c"    =>  532.0, # (Let op: Strikt genomen AMP, maar in FBA vaak ADP voor balans)
+    
+    # 2. GTP Gedeelte (2 GTP per AA = 532)
+    "M_gtp_c"    => -532.0,
+    "M_gdp_c"    =>  532.0,
+
+    # Overige bijproducten voor de massa-balans (P_i en H+)
     "M_h2o_c"    => -1064.0,
-    "M_adp_c"    =>  1064.0,
     "M_pi_c"     =>  1064.0,
     "M_h_c"      =>  1064.0,
-
     # Product (De 'M_benzonase_c' die je zelf aanmaakt)
     "M_benzonase_c" => 1.0 
 )
@@ -64,13 +70,33 @@ model.metabolites["M_benzonase_c"] = AbstractFBCModels.CanonicalModel.Metabolite
 model.metabolites["M_benzonase_c"].name = "Benzonase"
 model.metabolites["M_benzonase_c"].compartment = "c"
 
+model.metabolites["M_benzonase_e"] = AbstractFBCModels.CanonicalModel.Metabolite()
+model.metabolites["M_benzonase_e"].name = "Benzonase (extracellular)"
+model.metabolites["M_benzonase_e"].compartment = "e"
+
 model.reactions["R_BENZ_prod"] = AbstractFBCModels.CanonicalModel.Reaction()
 model.reactions["R_BENZ_prod"].name = "Benzonase production"
 model.reactions["R_BENZ_prod"].lower_bound = 0.0
 model.reactions["R_BENZ_prod"].upper_bound = 1000.0
 model.reactions["R_BENZ_prod"].stoichiometry = benz_stoich # Je Dict
 
-
+# --- STAP C: Benzonase Export (NIEUW: van cel naar medium) ---
+model.reactions["R_BENZ_export"] = AbstractFBCModels.CanonicalModel.Reaction()
+model.reactions["R_BENZ_export"].name = "Benzonase secretion"
+model.reactions["R_BENZ_export"].lower_bound = 0.0
+model.reactions["R_BENZ_export"].upper_bound = 1000.0
+model.reactions["R_BENZ_export"].stoichiometry = Dict(
+    "M_benzonase_c" => -1.0, 
+    "M_benzonase_e" => 1.0
+)
+# STAP D: De Exchange reactie
+#model.reactions["R_EX_benz_e"] = AbstractFBCModels.CanonicalModel.Reaction()
+#model.reactions["R_EX_benz_e"].name = "Benzonase exchange (Sink)"
+#model.reactions["R_EX_benz_e"].lower_bound = 0.0      # De cel kan het niet 'opeten' van buitenaf
+#model.reactions["R_EX_benz_e"].upper_bound = 1000.0   # Het kan onbeperkt wegstromen
+#model.reactions["R_EX_benz_e"].stoichiometry = Dict(
+    #"M_benzonase_e" => -1.0                           # Het metaboliet 'verdwijnt' hier uit de berekening
+#)
 model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].lower_bound = 0.0 # bacterial growth is constrained!!!
 #model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].upper_bound = 2.0 # [1/h] moet bovenlimiet op staan anders te hoog
 # 2. Cybernetische Parameters 
@@ -101,7 +127,7 @@ mu_max_ac = 0.29
 mu_max_vector = [1.33, 1.26, 1.10, 0.29] 
 # 2. Bereken e_max vector (Steady-state: synthese / (degradatie + groei))
 # Formule: (alpha_syn + delta) / (beta_deg + mu_max)
-e_max_vector = (alpha_syn + 0.001) ./ (beta_deg .+ mu_max_vector)# glc, mal, glyc, ac
+e_max_vector = (alpha_syn .+ 0.001) ./ (beta_deg .+ mu_max_vector)# glc, mal, glyc, ac
 # --- 2. De Struct aanmaken ---
 # Zorg dat de volgorde in je Parameters-file exact matcht met deze aanroep:
 p = Parameters(
@@ -146,17 +172,9 @@ p = Parameters(
     0.0,            # q_benz start op 0    
     mu_max_vector,  # DE NIEUWE VECTOR
     e_max_vector,    # DE NIEUWE VECTOR
-    0.001            #f_prod (15% van de totale import wordt opgeofferd aan benzonase productie)
+    0.0015            #f_prod (% van de totale import wordt opgeofferd aan benzonase productie)
 )
 
-println("--- STOICHIOMETRIE CHECK ---")
-for met_id in keys(benz_stoich)
-    if !haskey(model.metabolites, met_id)
-        println("❌ MISSING: '$met_id' niet gevonden in model!")
-    else
-        println("✅ Found: $met_id")
-    end
-end
 include("./dFBA_function.jl")
 # 5. INITIALISATIE
 # [Glc, Mal, Glyc, Ac, e_glc, e_mal, e_Glyc, e_ac, S, I, L, P, Benz] (subs in mmol/l)

@@ -8,7 +8,6 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     e_enz  = u[Eind]
     C_benz = u[Benzind]
     e_mal  = u[Eind[2]] # LamB proxy (Maltose enzym)
-
     # --- 2. CYBERNETICA & FBA ---
     f = getMonod(S_subs, p)
     R = getRate(f, p)
