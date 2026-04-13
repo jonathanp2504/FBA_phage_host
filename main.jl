@@ -90,13 +90,13 @@ model.reactions["R_BENZ_export"].stoichiometry = Dict(
     "M_benzonase_e" => 1.0
 )
 # STAP D: De Exchange reactie
-#model.reactions["R_EX_benz_e"] = AbstractFBCModels.CanonicalModel.Reaction()
-#model.reactions["R_EX_benz_e"].name = "Benzonase exchange (Sink)"
-#model.reactions["R_EX_benz_e"].lower_bound = 0.0      # De cel kan het niet 'opeten' van buitenaf
-#model.reactions["R_EX_benz_e"].upper_bound = 1000.0   # Het kan onbeperkt wegstromen
-#model.reactions["R_EX_benz_e"].stoichiometry = Dict(
-    #"M_benzonase_e" => -1.0                           # Het metaboliet 'verdwijnt' hier uit de berekening
-#)
+model.reactions["R_EX_benz_e"] = AbstractFBCModels.CanonicalModel.Reaction()
+model.reactions["R_EX_benz_e"].name = "Benzonase exchange (Sink)"
+model.reactions["R_EX_benz_e"].lower_bound = 0.0      # De cel kan het niet 'opeten' van buitenaf
+model.reactions["R_EX_benz_e"].upper_bound = 1000.0   # Het kan onbeperkt wegstromen
+model.reactions["R_EX_benz_e"].stoichiometry = Dict(
+    "M_benzonase_e" => -1.0                           # Het metaboliet 'verdwijnt' hier uit de berekening
+)
 model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].lower_bound = 0.0 # bacterial growth is constrained!!!
 #model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].upper_bound = 2.0 # [1/h] moet bovenlimiet op staan anders te hoog
 # 2. Cybernetische Parameters 

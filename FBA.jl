@@ -67,10 +67,10 @@ function fbaUpdate!(u, p::Parameters)
             p.fbaModel.reactions["R_BENZ_export"].lower_bound = 0.0
             p.fbaModel.reactions["R_BENZ_export"].upper_bound = 1000.0
         end
-        #if haskey(p.fbaModel.reactions, "R_EX_benz_e")
-           # p.fbaModel.reactions["R_EX_benz_e"].lower_bound = 0.0
-           # p.fbaModel.reactions["R_EX_benz_e"].upper_bound = 1000.0
-        #end
+        if haskey(p.fbaModel.reactions, "R_EX_benz_e")
+           p.fbaModel.reactions["R_EX_benz_e"].lower_bound = 0.0
+           p.fbaModel.reactions["R_EX_benz_e"].upper_bound = 1000.0
+        end
     end
 
     sol_l = flux_balance_analysis(p.fbaModel, optimizer = HiGHS.Optimizer)
