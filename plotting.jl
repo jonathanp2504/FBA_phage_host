@@ -37,6 +37,16 @@ function plotBenzonase(sol)
           label="Benzonase",
           fill=(0, 0.2, :green)) # Geeft een mooi schaduweffect onder de lijn
 end
+function plotOptimizationHeatmap(t_inf_axis, moi_axis, data)
+    return heatmap(t_inf_axis, 1:length(moi_axis), data,
+        yticks = (1:length(moi_axis), string.(moi_axis)),
+        xlabel = "Tijdstip van infectie (t_inf) [h]",
+        ylabel = "Initiële MOI (P/N)",
+        title  = "Optimalisatie: Max Benzonase Opbrengst",
+        colorbar_title = "mmol/L",
+        color  = :viridis,
+        clims  = (0, maximum(data)*1.1)) # Zet de schaal netjes
+end
 function plotAll(sol, p)
     p1 = plotSubstrates(sol)
     p2 = plotRelEnzymes(sol, p)
