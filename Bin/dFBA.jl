@@ -1,20 +1,55 @@
-function dFBA_phage_system(du, u, h, p::Parameters, t)
+include("./parameters.jl")
+include("./FBA.jl")
+using DelayDiffEq
+using OrdinaryDiffEq
+
+function run(p::Parameters)
+    # INITIALISATIE
+    # [Glc, Mal, Glyc, Ac, e_glc, e_mal, e_Glyc, e_ac, S, I, L, P, Benz] (subs in mmol/l)
+    u0 = zeros(23)
+    u0[Sind] = [0.0, 2.337, 5.42, 0.0]#[4.44, 2.337, 5.42, 0.0]    # Subs
+    u0[Eind] = [0.95, 0.01, 0.01, 0.01]    # Enzymen
+    u0[Nind]   = p.startingBiomass                         # S0 (alle cellen beginnen zonder fagen)
+
+    tspan = (0.0, p.duration) 
+
+    infectionCondition(u, t, integrator) = t == p.infection_time 
+    infectionAffect!(integrator) = integrator.u[Pfind] = p.infection_dose
+    infectionCallBack = DiscreteCallback(infectionCondition, infectionAffect!)
+
+    # Naar dit (elke 0.1 uur = 6 minuten):
+    fbaUpdateTimepoints = collect(0:1/60:p.duration)
+    fbaUpdateCondition(u, t, integrator) = t in fbaUpdateTimepoints
+    fbaAffect!(integrator) = fbaUpdate!(integrator.u, p)
+    fbaCallBack = DiscreteCallback(fbaUpdateCondition, fbaAffect!)
+
+    # positive domain
+    domainCondition(u, t, integrator) = any(x -> x < 0.0, u)
+    domainAffect!(integrator) = enforcePositiveDomain!(integrator.u)
+    domainCallBack = DiscreteCallback(domainCondition, domainAffect!)
+    problem = DDEProblem(simulate_dFBA!, u0, (p,t)->u0, tspan, p)
+
+    solution = solve(problem, MethodOfSteps(Tsit5()), 
+            reltol=1e-4, 
+            abstol=1e-6,
+            tstops=[p.infection_time; fbaUpdateTimepoints],
+            callback=CallbackSet(domainCallBack, infectionCallBack, fbaCallBack))
+    return solution
+end
+
+function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
+    #println("t = $t, mu = $(p.mu_l), X_tot = $(u[Nind])")
+    # --- Phage host model ---
+    updatePhageHostRates!(du, u, h, p, t)
+    updateSubstrateUptakeRates!(du, u, h, p, t)
+    return nothing
+end
+
+function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
     uDecision = h(p, t - 20/60) #
     uLysis = h(p, t - 60/60)
-    #println("t = $t, mu = $(p.mu), X_tot = $(u[Nind])")
-    # --- 1. EXTRACTIE ---
-    S_subs = u[Sind]
-    e_enz  = u[Eind]
-    C_benz = u[Benzind]
-    e_mal  = u[Eind[2]] # LamB proxy (Maltose enzym)
-
-    # --- 2. CYBERNETICA & FBA ---
-    f = getMonod(S_subs, p)
-    R = getRate(f, p)
-    u_cyt = getU_cyt(R, p)
-    v_cyt = getV_cyt(R)
-    f_receptor = getReceptorFactor(u, p)
     X_tot = getTotalBiomass(u, p)
+    f_receptor = getReceptorFactor(u, p)
     # --- EFFECTIEVE RATIO'S ---
     # De effectieve binding is nu afhankelijk van de aanwezige receptoren
     k_attach_eff = p.k_attach * f_receptor
@@ -53,69 +88,63 @@ function dFBA_phage_system(du, u, h, p::Parameters, t)
     du[Paind] = k_attach_eff * X_tot * u[Pfind] # attachment
     du[Paind] -= p.k_dettach * u[Paind] # dettachment
     du[Paind] -= k_inject_eff * u[Paind] # injection   
-    
+
+    # Glucose vrijgave bij lysis (enkel voor index 1 = glucose)
+    du[Sind[1]] += p.h_release * p.k_inject * uLysis[Paind] * uLysis[Nind]/getTotalBiomass(uLysis, p)
+
+    return nothing
+end
+
+function updateSubstrateUptakeRates!(du, u, h, p::Parameters, t)::Nothing
+    # --- 1. EXTRACTIE ---
+    substrates = u[Sind]
+    enzymes = u[Eind]
+    # --- 2. CYBERNETICA & FBA ---
+    f = getMonod(substrates, p)
+    R = getRate(f, p)
+    u_cyt = getU_cyt(R, p)
+    X_tot = getTotalBiomass(u, p)
     # 4. DIFFERENTIAALVERGELIJKINGEN  
-    for i in eachindex(Sind)
+    for i in eachindex(substrates)
         sub_idx = Sind[i]
         enz_idx = Eind[i]
 
-        # VERBETERDE LOGICA:
-        # We laten de opname altijd toe, tenzij het substraat écht op is EN 
-        # de FBA geen opname meer voorschrijft (p.q[i] >= 0).
-        # Als er door lysis weer glucose bijkomt (S_subs[i] > 1e-7), 
-        # zal de term p.q[i] * ... weer negatief worden en de glucose doen dalen.
-        
-        #if S_subs[i] < 1e-8 && p.q[i] >= 0
-             #du[sub_idx] = 0.0
-        #else
-             #du[sub_idx] = p.q[i] * p.E_coli_cellDW * X_tot 
-        #end
         # 1. Bereken de flux zoals voorheen
         # Totale opname = (opname per N-cel * aantal N) + (opname per l-cel * aantal l)
         # We gebruiken hier u[Nind] en u[lind] in plaats van X_tot
         # We tellen alle cellen die nog metabool actief zijn mee:
         # 1. De gezonde cellen (N) + de cellen in transitie (D & L)
-        actieve_vrije_biomassa = u[Nind] + u[Dind] + u[Lind]
-        flux_N = p.q_N[i] * actieve_vrije_biomassa * p.E_coli_cellDW
+        
+        flux_N = p.q_N[i] * X_tot * p.E_coli_cellDW
     
         # 2. De lysogene cellen (l) met hun eigen (tragere) opnamesnelheid q_l
         flux_l = p.q_l[i] * u[lind] * p.E_coli_cellDW
     
         flux_totaal = flux_N + flux_l
         du[sub_idx] = min(0.0, flux_totaal)
-        # 2. De zachte stop (Hill-factor)
-        # K_safe zorgt dat de flux naar 0 gaat als de concentratie bijna 0 is.
-        #K_safe = 1e-4 
-        #soft_stop = u[sub_idx] / (u[sub_idx] + K_safe)
-
+    
         # 3. Bereken de uiteindelijke verandering
-        #du[sub_idx] = flux_val * soft_stop
-        # Totaal aantal cellen voor de noemer
-        total_cells = u[Nind] + u[Dind] + u[Lind] + u[lind]
 
         # Alleen N (naïef) en L (lysogeen) dragen bij aan de totale groei
         # D en I hebben mu = 0, dus die vallen weg uit de teller
-        if total_cells > 1.0
-            mu_avg = (p.mu_N * u[Nind] + p.mu_l * u[lind]) / total_cells
+        if X_tot > 1.0
+            mu_avg = (p.mu_N * u[Nind] + p.mu_l * u[lind]) / X_tot
         else
             mu_avg = p.mu_N
         end
-        # Glucose vrijgave bij lysis (enkel voor index 1 = glucose)
-        if i == 1
-            du[sub_idx] += p.h_release * p.k_inject * uLysis[Paind] * uLysis[Nind]/getTotalBiomass(uLysis, p)
-        end
 
-        du[enz_idx] = p.alpha_syn * f[i] * u_cyt[i] - (p.beta_deg + mu_avg)* e_enz[i] + 0.001 # kleine basale expressie zodat er altijd een beetje enzym is (voor snelle adaptatie bij nieuwe substraat beschikbaar)
+        du[enz_idx] = p.alpha_syn * f[i] * u_cyt[i] - (p.beta_deg + mu_avg)* enzymes[i] + 0.001 # kleine basale expressie zodat er altijd een beetje enzym is (voor snelle adaptatie bij nieuwe substraat beschikbaar)
     end
 
-    # --- 4. BENZONASE BALANS ---
     # --- 3. BENZONASE PRODUCTIE ---
     # Productie is evenredig aan het groeiverlies: (mu_ruw - mu_eff) * biomassa * Yield
     # Hoe sneller de cel zou kúnnen groeien, hoe meer Benzonase hij maakt. 
     # Alleen de lysogenen (u[lind]) dragen bij
-    productie_benz = p.q_benz_l * p.E_coli_cellDW * u[lind]
-    du[Benzind] = productie_benz #(p.beta_benz * u[Benzind])
+    du[Benzind] = p.q_benz_l * p.E_coli_cellDW * u[lind] #(p.beta_benz * u[Benzind])
+    return nothing
 end
+
+
 
 function getMonod(substrates::Vector{Float64}, parameters::Parameters)::Vector{Float64}
     return [max(0.0, substrates[i] / (substrates[i] + parameters.K_s[i])) for i in eachindex(substrates)]
@@ -165,4 +194,10 @@ function getReceptorFactor(u, p::Parameters)
     # De 1e-4 is de 'basale' aanwezigheid van LamB
     factor = (e_mal + 1e-4) / e_mal_max
     return factor
+end
+
+function enforcePositiveDomain!(u)
+    for i in eachindex(u)
+        u[i] = max(0.0, u[i])
+    end
 end
