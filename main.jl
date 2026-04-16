@@ -1,3 +1,4 @@
+include("./setup.jl")
 using Plots
 using COBREXA
 using AbstractFBCModels
@@ -8,6 +9,7 @@ import SBMLFBCModels
 include("./Bin/parameters.jl")
 include("./Bin/FBA.jl")
 include("./Bin/dFBA.jl")
+include("Optimization.jl")
 
 # 1. Model laden
 model_path = joinpath(@__DIR__, "iJO1366.xml")
@@ -89,4 +91,34 @@ sol = run(p)
 
 # 6. UITGEBREID PLOTTEN
 include("./plotting.jl")
-plotAll(sol, p)
+#plotAll(sol, p)
+# --- 2. START OPTIMALISATIE ---
+println("--- Optimalisatie proces gestart ---")
+tspan = (0.0, duration)
+
+# Roep de functie aan uit optimizer.jl
+# Deze functie moet 'Optimization.solve' aanroepen en de beste x teruggeven
+opt_sol = run_optimization(p, tspan)
+
+# Haal de winnende waarden op
+best_moi = opt_sol.u[1]
+best_t_inf = opt_sol.u[2]
+
+println("--- Optimalisatie voltooid ---")
+println("Beste MOI gevonden: ", round(best_moi, digits=4))
+println("Beste Infectietijd gevonden: ", round(best_t_inf, digits=2), " uur")
+println("Maximale Benzonase opbrengst: ", round(-opt_sol.objective, digits=6))
+
+# --- 3. FINALE RUN MET OPTIMALE WAARDEN ---
+# We overschrijven de initiële parameters met de resultaten van de optimizer
+p_optimal = remake(p, 
+    MOI = best_moi, 
+    infection_time = best_t_inf
+)
+
+# Run de simulatie één keer met de beste instellingen
+sol_final = run(p_optimal)
+
+# --- 4. PLOTTEN ---
+# Nu plotten we de uitkomst van de geoptimaliseerde run
+plotAll(sol_final, p_optimal)
