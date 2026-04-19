@@ -1,13 +1,17 @@
 using Pkg
 Pkg.activate(".")
-Pkg.resolve()
+Pkg.add([
+    "OrdinaryDiffEq",
+    "DelayDiffEq",
+    "SciMLBase",
+    "OrdinaryDiffEqCore",
+    "UnPack",
+    "Plots",
+    "COBREXA",
+    "AbstractFBCModels",
+    "SBMLFBCModels",
+    "JuMP",
+    "HiGHS"
+])
 Pkg.instantiate()
 Pkg.precompile()
-import Pkg
-Pkg.add("DelayDiffEq")
-Pkg.add("SciMLBase")
-Pkg.add("JuMP")
-using DelayDiffEq
-using SciMLBase
-using JuMP
-

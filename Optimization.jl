@@ -1,7 +1,8 @@
 Pkg.add(["Optimization", "OptimizationOptimJL", "ForwardDiff"])
-include("./setup.jl")
+
 using Optimization, OptimizationOptimJL
 using DifferentialEquations
+using UnPack
 include("./Bin/parameters.jl")
 include("./Bin/FBA.jl")
 include("./Bin/dFBA.jl")
@@ -10,11 +11,11 @@ include("./Bin/dFBA.jl")
 # include("main_model.jl") 
 
 function run_optimization(p_initial::Parameters, tspan)
-    
+    u0 = run(p_initial::Parameters) # Gebruik dezelfde initiële condities als in de hoofdrun
     # 1. De Objective Functie
     # x bevat de parameters die we willen tunen, bijv:
-    # x[1] = MOI (Multiplicity of Infection)
-    # x[2] = t_induction (Wanneer voeg je de fagen toe)
+    #x[1] = MOI (Multiplicity of Infection)
+    #x[2] = t_induction (Wanneer voeg je de fagen toe)
     function objective(x, p_opt)
         # Maak een kopie van de parameters en update de waarden
         p_current = remake(p_opt, 
@@ -38,7 +39,7 @@ function run_optimization(p_initial::Parameters, tspan)
     end
 
     # 2. Setup van de Optimalisatie
-    # x0: initiële gok [MOI, t_inductie]
+    #x0: initiële gok [MOI, t_inductie]
     x0 = [1.0, 3.0] 
     lb = [1e-5, 1.0]  # Ondergrenzen
     ub = [2.0, 15.0] # Bovengrenzen (bijv. max 30 uur)
@@ -56,3 +57,6 @@ end
 # Voorbeeld aanroep:
 # result = run_optimization(p, (0.0, 48.0))
 # println("Optimale MOI: ", result.u[1], " Optimale tijd: ", result.u[2])
+
+
+

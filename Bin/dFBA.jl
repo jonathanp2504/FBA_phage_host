@@ -1,8 +1,20 @@
+module DEVerbosityPatch
+    using OrdinaryDiffEqCore
+    if !isdefined(OrdinaryDiffEqCore, :DEVerbosity)
+        const DEVerbosity = false
+        export DEVerbosity
+    end
+end
+using .DEVerbosityPatch
+
 include("./parameters.jl")
 include("./FBA.jl")
-using DelayDiffEq
+using UnPack
 using OrdinaryDiffEq
 
+# Inject missing DEVerbosity before DelayDiffEq loads
+import OrdinaryDiffEqCore
+using DelayDiffEq
 function run(p::Parameters)
     # INITIALISATIE
     # [Glc, Mal, Glyc, Ac, e_glc, e_mal, e_Glyc, e_ac, S, I, L, P, Benz] (subs in mmol/l)
@@ -29,7 +41,8 @@ function run(p::Parameters)
     domainCallBack = DiscreteCallback(domainCondition, domainAffect!)
     problem = DDEProblem(simulate_dFBA!, u0, (p,t)->u0, tspan, p)
 
-    solution = solve(problem, MethodOfSteps(Tsit5()), 
+    solution = solve(problem, MethodOfSteps(Tsit5()),
+            verbose=false, 
             reltol=1e-4, 
             abstol=1e-6,
             tstops=[p.infection_time; fbaUpdateTimepoints],

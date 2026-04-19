@@ -1,5 +1,9 @@
-include("./setup.jl")
+
 using Plots
+#Pkg.activate(".")
+#Pkg.add("UnPack")
+# Verwijder de Pkg.add regels uit je script als ze al geïnstalleerd zijn
+using UnPack
 using COBREXA
 using AbstractFBCModels
 using DelayDiffEq
@@ -9,7 +13,7 @@ import SBMLFBCModels
 include("./Bin/parameters.jl")
 include("./Bin/FBA.jl")
 include("./Bin/dFBA.jl")
-include("Optimization.jl")
+include("optimization_2.jl")
 
 # 1. Model laden
 model_path = joinpath(@__DIR__, "iJO1366.xml")
@@ -37,7 +41,7 @@ lysogenFba = buildFbaCache(lysogenModel, exchange_ids, "R_BIOMASS_Ec_iJO1366_cor
 MW_values      = [180.16, 342.3, 92.09, 60.05]
 h_release = 6.0e-12 # glucose vrijgegeven bij lysis (mmol/burst) waarde gebaseerd op Luan table 7
 duration = 20.0
-startingBiomass = 1e6 # Start met 1 miljoen cellen per liter (1e6 cells/L)
+startingBiomass = 1e9 # Start met 1 miljoen cellen per liter (1e6 cells/L)
 n_hill = 2.0
 # K_mu = 0.2
 f_res = 0.05
@@ -87,38 +91,74 @@ p = Parameters(
 )
 
 
-sol = run(p)
+#sol = run(p)
 
 # 6. UITGEBREID PLOTTEN
-include("./plotting.jl")
+#include("./plotting.jl")
 #plotAll(sol, p)
 # --- 2. START OPTIMALISATIE ---
-println("--- Optimalisatie proces gestart ---")
-tspan = (0.0, duration)
+#println("--- Optimalisatie proces gestart ---")
+#tspan = (0.0, duration)
 
 # Roep de functie aan uit optimizer.jl
 # Deze functie moet 'Optimization.solve' aanroepen en de beste x teruggeven
-opt_sol = run_optimization(p, tspan)
+#opt_sol = run_optimization(p, tspan)
 
 # Haal de winnende waarden op
-best_moi = opt_sol.u[1]
-best_t_inf = opt_sol.u[2]
+#best_moi = opt_sol.u[1]
+#best_t_inf = opt_sol.u[2]
 
-println("--- Optimalisatie voltooid ---")
-println("Beste MOI gevonden: ", round(best_moi, digits=4))
-println("Beste Infectietijd gevonden: ", round(best_t_inf, digits=2), " uur")
-println("Maximale Benzonase opbrengst: ", round(-opt_sol.objective, digits=6))
+#println("--- Optimalisatie voltooid ---")
+#println("Beste MOI gevonden: ", round(best_moi, digits=4))
+#println("Beste Infectietijd gevonden: ", round(best_t_inf, digits=2), " uur")
+#println("Maximale Benzonase opbrengst: ", round(-opt_sol.objective, digits=6))
 
 # --- 3. FINALE RUN MET OPTIMALE WAARDEN ---
 # We overschrijven de initiële parameters met de resultaten van de optimizer
-p_optimal = remake(p, 
-    MOI = best_moi, 
-    infection_time = best_t_inf
-)
+#p_optimal = remake(p, 
+    #MOI = best_moi, 
+    #infection_time = best_t_inf
+#)
 
 # Run de simulatie één keer met de beste instellingen
-sol_final = run(p_optimal)
+#sol_final = run(p_optimal)
 
 # --- 4. PLOTTEN ---
 # Nu plotten we de uitkomst van de geoptimaliseerde run
+#plotAll(sol_final, p_optimal)
+
+sol = run(p)
+
+include("./plotting.jl")
+
+# --- OPTIMALISATIE ---
+println("--- Optimalisatie proces gestart ---")
+tspan = (0.0, duration)
+
+opt_sol = run_optimization(p, tspan)
+
+best_t_inf    = opt_sol.best_t_inf
+best_biomass  = opt_sol.best_biomass
+
+println("MOI (vast)         : 2.0")
+println("Beste infectietijd : ", round(best_t_inf, digits=2), " uur")
+println("Beste beginbiomassa: ", round(best_biomass, digits=0), " cellen/L")
+println("Max Benzonase      : ", round(opt_sol.best_benzonase, digits=6))
+
+p_optimal = Parameters(
+    p.duration,
+    best_biomass,        # <-- variabel
+    p.alpha_syn, p.beta_deg, p.K_s, p.V_max, p.p_pref,
+    p.tau, p.b, p.E_coli_cellDW, p.MW, p.h_release,
+    p.biomass_id, p.ex_ids, p.all_exchanges, p.essentials,
+    p.fbaModelNaive, p.fbaModelLysogen,
+    p.mu_N, copy(p.q_N), p.mu_l, copy(p.q_l), p.q_benz_l,
+    p.k_attach, p.k_dettach, p.k_inject, p.K_mal,
+    best_t_inf,
+    2.0 * best_biomass,  # infectiedosis = MOI * N0
+    p.benz_id, p.k_tox, p.beta_benz, p.q_benz,
+    copy(p.mu_max), copy(p.e_max), p.f_prod
+)
+
+sol_final = run(p_optimal)
 plotAll(sol_final, p_optimal)
