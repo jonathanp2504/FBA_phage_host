@@ -1,3 +1,5 @@
+using JuMP
+
 # indices in state vector u:
 # 1:4   -> Substraten
 const Sind = 1:4
@@ -15,7 +17,20 @@ const MOIind = Paind+1
 # Benz (Benzonase)
 const Benzind = MOIind+1
 
+mutable struct FbaCache
+    optimizer::JuMP.Model
+    reaction_vars::Dict{String, JuMP.VariableRef}
+    exchange_ids::Vector{String}
+    tracked_ids::Vector{String}
+    biomass_id::String
+    benz_id::Union{Nothing, String}
+end
+
 mutable struct Parameters 
+    # simulation settings
+    duration::Float64
+    startingBiomass::Float64
+    
     # Cybernetica & Kinetiek
     alpha_syn::Float64 
     beta_deg::Float64
@@ -35,7 +50,9 @@ mutable struct Parameters
     ex_ids::Vector{String}
     all_exchanges::Vector{String}
     essentials::Vector{String}
-    fbaModel::Any
+    fbaModelNaive::FbaCache
+    fbaModelLysogen::FbaCache
+
     # Resultaten voor Naïeve cellen (N)
     mu_N::Float64
     q_N::Vector{Float64}
@@ -51,8 +68,8 @@ mutable struct Parameters
     k_inject::Float64       # Injectierate (1/h) - de stap van S_i naar I
     K_mal::Float64       # Affiniteit voor LamB (verzadiging van de ladder)
 
-
     infection_time::Float64
+    infection_dose::Float64
 
     # benzonase parameters
     benz_id::String    # Het ID van de reactie in de FBA
@@ -123,3 +140,44 @@ function getMu_avg(p, u)
         return p.mu_N # Fallback naar gezonde groei
     end
 end
+
+
+benz_stoich = Dict(
+    # Aminozuren (Inputs vanuit het Cytosol, sequentie via uniprot)
+    "M_ala__L_c" => -33.0, 
+    "M_arg__L_c" => -13.0, 
+    "M_asn__L_c" => -22.0, 
+    "M_asp__L_c" => -16.0, 
+    "M_cys__L_c" => -4.0,  
+    "M_gln__L_c" => -12.0, 
+    "M_glu__L_c" => -10.0, 
+    "M_gly_c"    => -21.0, 
+    "M_his__L_c" => -4.0, 
+    "M_ile__L_c" => -8.0,  
+    "M_leu__L_c" => -21.0, 
+    "M_lys__L_c" => -14.0, 
+    "M_met__L_c" => -3.0,  
+    "M_phe__L_c" => -8.0,  
+    "M_pro__L_c" => -10.0, 
+    "M_ser__L_c" => -19.0, 
+    "M_thr__L_c" => -15.0, 
+    "M_trp__L_c" => -5.0,  
+    "M_tyr__L_c" => -10.0, 
+    "M_val__L_c" => -10.0,
+
+    # Energieverbruik volgens de paper (Totaal 266 AA)
+    # 1. ATP Gedeelte (2 ATP per AA = 532)
+    "M_atp_c"    => -532.0,
+    "M_adp_c"    =>  532.0, # (Let op: Strikt genomen AMP, maar in FBA vaak ADP voor balans)
+    
+    # 2. GTP Gedeelte (2 GTP per AA = 532)
+    "M_gtp_c"    => -532.0,
+    "M_gdp_c"    =>  532.0,
+
+    # Overige bijproducten voor de massa-balans (P_i en H+)
+    "M_h2o_c"    => -1064.0,
+    "M_pi_c"     =>  1064.0,
+    "M_h_c"      =>  1064.0,
+    # Product (De 'M_benzonase_c' die je zelf aanmaakt)
+    "M_benzonase_c" => 1.0 
+)

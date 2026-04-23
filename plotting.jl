@@ -1,4 +1,4 @@
-include("./parameters.jl")
+include("./Bin/parameters.jl")
 # Plot A: Substraatverloop
 function plotSubstrates(sol)
     return plot(sol, idxs=Sind, title="Substraten (mmol/L)", 
