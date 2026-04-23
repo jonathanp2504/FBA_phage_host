@@ -3,43 +3,28 @@ using COBREXA
 using HiGHS
 using AbstractFBCModels
 using JuMP
-import SBMLFBCModels 
+import SBMLFBCModels
 
 struct FbaSolution
     fluxes::Dict{String, Float64}
 end
 
+# ============================================================
+#  fbaUpdate! — wordt elke tijdsstap aangeroepen vanuit dFBA
+#  Benzonase zit NIET in de FBA, productie via f_prod/Y_benz
+# ============================================================
 function fbaUpdate!(u::Vector{Float64}, p::Parameters)
     vmax::Vector{Float64} = getVmax(u, p)
-    ## Solve FBA for naive cells
-    sol = solveFba(p.fbaModelNaive, vmax, p)
-    if !isnothing(sol) && !isempty(sol.fluxes)
-        p.mu_N = sol.fluxes[p.biomass_id]
-        p.q_N  = getFluxes(sol, p.ex_ids)
-    else 
-        p.mu_N = 0.0; p.q_N .= 0.0
-    end
-    ## Solve FBA for lysogenic cells
-    # Totale import capaciteit in mmol/gDW/h
-    totale_import = sum(vmax)
-    
-    # De eis: de cel MOET een fractie (f_prod) van zijn import omzetten in Benzonase
-    geforceerde_benz_flux = totale_import * p.f_prod
-    setLowerBound!(p.fbaModelLysogen, p.benz_id, geforceerde_benz_flux)
 
-    sol = solveFba(p.fbaModelLysogen, vmax, p)
-    
+    sol = solveFba(p.fbaModel, vmax, p)
     if !isnothing(sol) && !isempty(sol.fluxes)
-        p.mu_l = sol.fluxes[p.biomass_id]
-        p.q_l  = getFluxes(sol, p.ex_ids)
-        p.q_benz_l = sol.fluxes[p.benz_id]
-        #println("HOERA: Flux gevonden: ", p.q_benz_l)
-    else 
-        # Als hij hier komt, is hij nog steeds Infeasible. 
-        # Dit betekent dat de cel op dit moment niet genoeg suiker KAN opnemen
-        # om die 0.001 te maken. Check je u0 voor de enzymen!
-        p.mu_l = 0.0; p.q_l .= 0.0; p.q_benz_l = 0.0
+        p.mu = sol.fluxes[p.biomass_id]
+        p.q  = getFluxes(sol, p.ex_ids)
+    else
+        p.mu = 0.0
+        p.q .= 0.0
     end
+    p.q_benz = 0.0  # niet via FBA berekend
 end
 
 function buildFbaCache(model, exchange_ids::Vector{String}, biomass_id::String; benz_id::Union{Nothing, String}=nothing)
@@ -52,7 +37,7 @@ function buildFbaCache(model, exchange_ids::Vector{String}, biomass_id::String; 
             optimizer,
             lower_bound = reaction.lower_bound,
             upper_bound = reaction.upper_bound,
-            base_name = reaction_id,
+            base_name   = reaction_id,
         )
     end
 
@@ -89,75 +74,36 @@ function setUpperBound!(cache::FbaCache, reaction_id::String, value::Float64)
 end
 
 function solveFba(cache::FbaCache, vmax::Vector{Float64}, p::Parameters)
-    # Update alleen de variabele bounds op de reeds gebouwde LP.
     for i in eachindex(vmax)
         setLowerBound!(cache, cache.exchange_ids[i], -vmax[i])
     end
-
     JuMP.optimize!(cache.optimizer)
     if !JuMP.is_solved_and_feasible(cache.optimizer; dual=false)
         return nothing
     end
-
     fluxes = Dict{String, Float64}()
     for reaction_id in cache.tracked_ids
         fluxes[reaction_id] = JuMP.value(cache.reaction_vars[reaction_id])
     end
-
     return FbaSolution(fluxes)
 end
 
 function getVmax(u, p::Parameters)
     substrates = u[Sind]
-    enzymes = u[Eind]
-    f = getMonod(substrates, p)
-    R = getRate(f, p)
+    enzymes    = u[Eind]
+    f     = getMonod(substrates, p)
+    R     = getRate(f, p)
     v_cyt = getV_cyt(R)
     vmax::Vector{Float64} = zeros(length(substrates))
     for i in eachindex(substrates)
         e_relatief = enzymes[i] / p.e_max[i]
-        vmax[i] = R[i] * e_relatief * v_cyt[i]
+        vmax[i]    = R[i] * e_relatief * v_cyt[i]
     end
     return vmax
 end
 
-##########################################
-# Loading and modifying the FBA model
-##########################################
 function loadFBAmodel(path)
-    model = convert(AbstractFBCModels.CanonicalModel.Model,  load_model(path))
-    model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].lower_bound = 0.0 # bacterial growth is constrained!!!
+    model = convert(AbstractFBCModels.CanonicalModel.Model, load_model(path))
+    model.reactions["R_BIOMASS_Ec_iJO1366_core_53p95M"].lower_bound = 0.0
     return model
 end
-
-function addBenzonase!(model, benz_stoich)
-    # Voeg metabolieten toe
-    model.metabolites["M_benzonase_c"] = AbstractFBCModels.CanonicalModel.Metabolite()
-    model.metabolites["M_benzonase_c"].name = "Benzonase"
-    model.metabolites["M_benzonase_c"].compartment = "c"
-
-    model.metabolites["M_benzonase_e"] = AbstractFBCModels.CanonicalModel.Metabolite()
-    model.metabolites["M_benzonase_e"].name = "Benzonase (extracellular)"
-    model.metabolites["M_benzonase_e"].compartment = "e"
-
-    # Voeg productie reactie toe
-    model.reactions["R_BENZ_prod"] = AbstractFBCModels.CanonicalModel.Reaction()
-    model.reactions["R_BENZ_prod"].name = "Benzonase production"
-    model.reactions["R_BENZ_prod"].lower_bound = 0.0
-    model.reactions["R_BENZ_prod"].upper_bound = 1000.0
-    model.reactions["R_BENZ_prod"].stoichiometry = benz_stoich
-
-    # Voeg export en exchange toe
-    model.reactions["R_BENZ_export"] = AbstractFBCModels.CanonicalModel.Reaction()
-    model.reactions["R_BENZ_export"].stoichiometry = Dict("M_benzonase_c" => -1.0, "M_benzonase_e" => 1.0)
-    model.reactions["R_BENZ_export"].lower_bound = 0.0
-    model.reactions["R_BENZ_export"].upper_bound = 1000.0
-
-    model.reactions["R_EX_benz_e"] = AbstractFBCModels.CanonicalModel.Reaction()
-    model.reactions["R_EX_benz_e"].stoichiometry = Dict("M_benzonase_e" => -1.0)
-    model.reactions["R_EX_benz_e"].lower_bound = 0.0
-    model.reactions["R_EX_benz_e"].upper_bound = 1000.0
-    return model
-end
-
-

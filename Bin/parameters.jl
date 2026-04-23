@@ -1,21 +1,20 @@
 using JuMP
 
-# indices in state vector u:
-# 1:4   -> Substraten
-const Sind = 1:4
-# 5:8   -> Enzymen
-const Eind = 5:8
-# N 
-const Nind = Eind[end]+1
-const Dind = Nind+1
-const Lind = Dind+1
-const lind = Lind+1
-# P (Vrije fagen)
-const Pfind = lind+1
-const Paind = Pfind+1
-const MOIind = Paind+1
-# Benz (Benzonase)
-const Benzind = MOIind+1
+# ============================================================
+#  State vector indices
+#  [Glc, Mal, Glyc, Ac,       -> Sind  1:4
+#   e_glc, e_mal, e_gly, e_ac -> Eind  5:8
+#   S, I, L,                  -> Sind  9,10,11
+#   P,                        -> Pfind 12
+#   Benz]                     -> Benzind 13
+# ============================================================
+const Sind    = 1:4
+const Eind    = 5:8
+const Sind_S  = Eind[end]+1   # 9  Susceptible (naïef)
+const Sind_I  = Sind_S+1      # 10 Infected (lytisch)
+const Sind_L  = Sind_I+1      # 11 Lysogeen
+const Pfind   = Sind_L+1      # 12 Vrije fagen
+const Benzind = Pfind+1       # 13 Benzonase
 
 mutable struct FbaCache
     optimizer::JuMP.Model
@@ -26,158 +25,116 @@ mutable struct FbaCache
     benz_id::Union{Nothing, String}
 end
 
-mutable struct Parameters 
-    # simulation settings
+mutable struct Parameters
+    # Simulatie instellingen
     duration::Float64
     startingBiomass::Float64
-    
+
     # Cybernetica & Kinetiek
-    alpha_syn::Float64 
+    alpha_syn::Float64
     beta_deg::Float64
     K_s::Vector{Float64}
     V_max::Vector{Float64}
     p_pref::Vector{Float64}
-    
-    # Phage-Host Parameters
-    tau::Float64
-    b::Float64
+
+    # Phage-Host Parameters (one-step adsorption)
+    tau::Float64          # Latente periode (uren)
+    b::Float64            # Burst size
+    alfa_ads::Float64     # Adsorptieconstante (L/cel/h)
     E_coli_cellDW::Float64
     MW::Vector{Float64}
     h_release::Float64
 
-    # Model IDs (iJO1366 specifiek)
+    # Model IDs
     biomass_id::String
     ex_ids::Vector{String}
     all_exchanges::Vector{String}
     essentials::Vector{String}
-    fbaModelNaive::FbaCache
-    fbaModelLysogen::FbaCache
+    fbaModel::FbaCache
 
-    # Resultaten voor Naïeve cellen (N)
-    mu_N::Float64
-    q_N::Vector{Float64}
-
-    # Resultaten voor Lysogene cellen (l)
-    mu_l::Float64
-    q_l::Vector{Float64}
-    q_benz_l::Float64  # Alleen de lysogenen produceren benzonase
-
-    # --- NIEUWE ADSORPTIE PARAMETERS (LADDER) ---
-    k_attach::Float64        # Binding rate (L / gDW / h) - voorheen alfa_ads
-    k_dettach::Float64       # Loskoppelingsrate (1/h)
-    k_inject::Float64       # Injectierate (1/h) - de stap van S_i naar I
-    K_mal::Float64       # Affiniteit voor LamB (verzadiging van de ladder)
+    # FBA resultaten
+    mu::Float64
+    q::Vector{Float64}
 
     infection_time::Float64
     infection_dose::Float64
 
-    # benzonase parameters
-    benz_id::String    # Het ID van de reactie in de FBA
-    k_tox::Float64     # Toxiciteitscoëfficiënt
-    beta_benz::Float64 # Afbraaksnelheid enzym
-    q_benz::Float64    # Opslag voor de berekende flux
+    # Benzonase parameters (productie buiten FBA)
+    benz_id::String
+    k_tox::Float64
+    beta_benz::Float64
+    q_benz::Float64
 
-    mu_max::Vector{Float64}   # [1.33, 1.26, 1.10, 0.29]
-    e_max::Vector{Float64}    # Wordt berekend bij start
-    f_prod::Float64
+    mu_max::Vector{Float64}
+    e_max::Vector{Float64}
+
+    # Groei-verlies methode voor Benzonase
+    f_prod::Float64   # Fractie van groei opgeofferd aan Benzonase
+    Y_benz::Float64   # mmol Benzonase per gDW groei-verlies
 end
 
-
-# 2. Receptor-factor (Storms: Michaelis-Menten verzadiging van LamB)
-#function f_receptor(u, p::Parameters)
-    # We halen het relatieve niveau van maltose-enzymen op
-    #e_mal = u[p.ind_e[2]] 
-    #return e_mal / (p.K_mal + e_mal + 1e-15)
-#end
-
-
-## --- POPULATIE DYNAMICA ---
+# ============================================================
+#  Helper functies
+# ============================================================
 
 function getPhi(u, p::Parameters)
-    return u[MOIind]
+    alfa_eff = getAlfa_eff(u, p)
+    return (alfa_eff * u[Pfind]) * 0.1
 end
 
-function getProbLys(u, p::Parameters)
-    phi = getPhi(u, p)
+function getProbLys(phi::Float64)
     return 1 - exp(-phi) - (phi * exp(-phi))
 end
 
 function getTotalBiomass(u, p::Parameters)
-    return u[Nind] + u[Dind] + u[Lind] + u[lind]
+    return u[Sind_S] + u[Sind_I] + u[Sind_L]
 end
-
-#function getTotalAdsorptionFlux(u, mu_werkelijk, u_cyt, p::Parameters)
-    #X_tot = getTotalBiomass(u, p)
-    #alpha_nu = get_alpha_eff(u, mu_werkelijk, u_cyt, p)
-    #return alpha_nu * X_tot * u[p.ind_P]
-#end
-
-#function getNewInfectionFlux(u, mu_werkelijk, u_cyt, p::Parameters)
-    #alpha_nu = get_alpha_eff(u, mu_werkelijk, u_cyt, p)
-    #return alpha_nu * u[p.ind_S] * u[p.ind_P]
-#end
-
-#function getAlfa_eff(u, p::Parameters)
-    #e_mal = u[p.ind_e[2]] # Stel dat maltose het 2e substraat is
-    #e_mal loopt van 0 tot 1 (relatief enzymniveau)
-    #We koppelen dit aan de maximale alfa_ads
-    #base_leak = 0.001 # 0.1% basale expressie
-    #return p.alfa_ads * (base_leak + (1 - base_leak) * e_mal)
-#end
-
 
 function getPhages(u, p::Parameters)
     return u[Pfind]
 end
 
-function getMu_avg(p, u)
-    # u[Nind] en u[lind] zijn de actuele aantallen uit de toestandsvector
-    total_cells = u[Nind] + u[lind]
-    
-    if total_cells > 1e-6
-        return (p.mu_N * u[Nind] + p.mu_l * u[lind]) / total_cells
-    else
-        return p.mu_N # Fallback naar gezonde groei
-    end
+function getTotalAdsorptionFlux(u, p::Parameters)
+    X_tot    = getTotalBiomass(u, p)
+    alfa_eff = getAlfa_eff(u, p)
+    return alfa_eff * X_tot * u[Pfind]
 end
 
+function getNewInfectionFlux(u, p::Parameters)
+    alfa_eff = getAlfa_eff(u, p)
+    return alfa_eff * u[Sind_S] * u[Pfind]
+end
 
-benz_stoich = Dict(
-    # Aminozuren (Inputs vanuit het Cytosol, sequentie via uniprot)
-    "M_ala__L_c" => -33.0, 
-    "M_arg__L_c" => -13.0, 
-    "M_asn__L_c" => -22.0, 
-    "M_asp__L_c" => -16.0, 
-    "M_cys__L_c" => -4.0,  
-    "M_gln__L_c" => -12.0, 
-    "M_glu__L_c" => -10.0, 
-    "M_gly_c"    => -21.0, 
-    "M_his__L_c" => -4.0, 
-    "M_ile__L_c" => -8.0,  
-    "M_leu__L_c" => -21.0, 
-    "M_lys__L_c" => -14.0, 
-    "M_met__L_c" => -3.0,  
-    "M_phe__L_c" => -8.0,  
-    "M_pro__L_c" => -10.0, 
-    "M_ser__L_c" => -19.0, 
-    "M_thr__L_c" => -15.0, 
-    "M_trp__L_c" => -5.0,  
-    "M_tyr__L_c" => -10.0, 
-    "M_val__L_c" => -10.0,
+function getAlfa_eff(u, p::Parameters)
+    e_mal     = u[Eind[2]]
+    base_leak = 0.001
+    return p.alfa_ads * (base_leak + (1 - base_leak) * e_mal)
+end
 
-    # Energieverbruik volgens de paper (Totaal 266 AA)
-    # 1. ATP Gedeelte (2 ATP per AA = 532)
-    "M_atp_c"    => -532.0,
-    "M_adp_c"    =>  532.0, # (Let op: Strikt genomen AMP, maar in FBA vaak ADP voor balans)
-    
-    # 2. GTP Gedeelte (2 GTP per AA = 532)
-    "M_gtp_c"    => -532.0,
-    "M_gdp_c"    =>  532.0,
+function getMonod(substrates::Vector{Float64}, parameters::Parameters)::Vector{Float64}
+    return [max(0.0, substrates[i] / (substrates[i] + parameters.K_s[i])) for i in eachindex(substrates)]
+end
 
-    # Overige bijproducten voor de massa-balans (P_i en H+)
-    "M_h2o_c"    => -1064.0,
-    "M_pi_c"     =>  1064.0,
-    "M_h_c"      =>  1064.0,
-    # Product (De 'M_benzonase_c' die je zelf aanmaakt)
-    "M_benzonase_c" => 1.0 
-)
+function getRate(monod::Vector{Float64}, parameters::Parameters)::Vector{Float64}
+    return parameters.V_max .* monod
+end
+
+function getU_cyt(rate::Vector{Float64}, parameters::Parameters)::Vector{Float64}
+    weighted_R = parameters.p_pref .* rate
+    denom = sum(weighted_R) + 1e-10
+    return weighted_R ./ denom
+end
+
+function getV_cyt(rate::Vector{Float64})::Vector{Float64}
+    denom = maximum(rate) + 1e-10
+    return rate ./ denom
+end
+
+function getFluxes(sol, ids::Vector{String})::Vector{Float64}
+    flux_vector = zeros(length(ids))
+    for i in eachindex(ids)
+        id = ids[i]
+        flux_vector[i] = haskey(sol.fluxes, id) ? sol.fluxes[id] : 0.0
+    end
+    return flux_vector
+end
