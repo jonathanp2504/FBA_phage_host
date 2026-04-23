@@ -1,12 +1,21 @@
-include("./parameters.jl")
+include("./Bin/parameters.jl")
 # Plot A: Substraatverloop
 function plotSubstrates(sol)
     return plot(sol, idxs=Sind, title="Substraten (mmol/L)", 
           label=["Glucose" "Maltose" "Glycerol" "Acetaat"], lw=2, xlabel= "t [h]", ylabel="Conc.")
 end
-function plotEnzymes(sol)
-    return plot(sol, idxs=Eind, title="Enzym-niveaus (Cybernetische e)", 
-          label=["e_Glc" "e_Mal" "e_Glyc" "e_Ac"], lw=2, ls=:dash, xlabel= "t [h]", ylabel="Relatief niveau")
+function plotRelEnzymes(sol, p)
+    # sol[p.Eind, :] geeft de absolute waarden
+    # We delen elke rij door de bijbehorende vaste e_max
+    e_abs = sol[Eind, :]
+    e_rel = zeros(size(e_abs))
+    
+    for i in 1:4
+        e_rel[i, :] = e_abs[i, :] ./ p.e_max[i]
+    end
+    
+    plot(sol.t, e_rel', title="Relatieve Enzymniveaus (Vast Plafond)", 
+         label=["e_Glc" "e_Mal" "e_Gly" "e_Ac"], lw=2, ylabel="e / e_max")
 end
 function plotPopulation(sol, p)
     X_totaal_data = [getTotalBiomass(u, p) for u in sol.u]
@@ -28,9 +37,19 @@ function plotBenzonase(sol)
           label="Benzonase",
           fill=(0, 0.2, :green)) # Geeft een mooi schaduweffect onder de lijn
 end
+function plotOptimizationHeatmap(t_inf_axis, moi_axis, data)
+    return heatmap(t_inf_axis, 1:length(moi_axis), data,
+        yticks = (1:length(moi_axis), string.(moi_axis)),
+        xlabel = "Tijdstip van infectie (t_inf) [h]",
+        ylabel = "Initiële MOI (P/N)",
+        title  = "Optimalisatie: Max Benzonase Opbrengst",
+        colorbar_title = "mmol/L",
+        color  = :viridis,
+        clims  = (0, maximum(data)*1.1)) # Zet de schaal netjes
+end
 function plotAll(sol, p)
     p1 = plotSubstrates(sol)
-    p2 = plotEnzymes(sol)
+    p2 = plotRelEnzymes(sol, p)
     p3 = plotPopulation(sol, p)
     p4 = plotPhages(sol)
     p5 = plotBenzonase(sol)
