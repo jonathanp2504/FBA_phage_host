@@ -59,12 +59,12 @@ function run_optimization(p_initial::Parameters, tspan)
     # ----------------------------------------------------------
     # STAP 1: GRID SEARCH
     # ----------------------------------------------------------
-    moi_values     = [2.0]
+    moi_values     = [0.0005]
     t_inf_values   = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0]
     biomass_values = [1e5, 1e6, 1e7, 1e8, 1e9]
 
     best_val     = -Inf
-    best_moi     = 2.0
+    best_moi     = 0.0005
     best_tinf    = t_inf_values[1]
     best_biomass = biomass_values[1]
     total        = length(moi_values) * length(t_inf_values) * length(biomass_values)
@@ -116,7 +116,7 @@ function run_optimization(p_initial::Parameters, tspan)
     gamma_nm = 2.0
     rho_nm   = 0.5
     sigma_nm = 0.5
-    max_iter = 200
+    max_iter = 100
     tol      = 1e-4
 
     for iter in 1:max_iter
