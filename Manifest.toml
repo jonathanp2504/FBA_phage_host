@@ -337,7 +337,7 @@ version = "1.16.2+0"
 
 [[deps.DelayDiffEq]]
 deps = ["ArrayInterface", "ConcreteStructs", "DataStructures", "DiffEqBase", "FastBroadcast", "ForwardDiff", "LinearAlgebra", "Logging", "OrdinaryDiffEq", "OrdinaryDiffEqCore", "OrdinaryDiffEqDefault", "OrdinaryDiffEqDifferentiation", "OrdinaryDiffEqFunctionMap", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqRosenbrock", "Printf", "RecursiveArrayTools", "Reexport", "SciMLBase", "SciMLLogging", "SimpleNonlinearSolve", "SymbolicIndexingInterface"]
-git-tree-sha1 = "c4b5c6d91acd09165f8cbabc4eefdc10350bce68"
+path = "C:/Users/Jonathan/Downloads/thesis/FBA_phage_host/LocalPackages/DelayDiffEq"
 uuid = "bcd4f6db-9728-5f36-b5f7-82caef46ccdb"
 version = "5.67.1"
 

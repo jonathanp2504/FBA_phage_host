@@ -10,6 +10,7 @@ include("./Bin/parameters.jl")
 include("./Bin/FBA.jl")
 include("./Bin/dFBA.jl")
 include("optimization_2.jl")
+#include("Optimization.jl")
 
 # 1. Model laden
 model_path = joinpath(@__DIR__, "iJO1366.xml")
@@ -27,7 +28,7 @@ K_s       = [0.0278, 0.0146, 0.0543, 0.0833]
 tau       = 1.0
 b         = 170.0
 p_pref    = [0.8925, 0.08925, 0.008925, 0.008925]
-V_max     = [12.7, 3.75, 0.0, 4.0]
+V_max     = [0.0, 3.75, 0.0, 4.0] # eigenlijk 12.7 voor glucose 
 E_coli_cellDW  = 1.0e-12
 infection_time = 2.0
 essentials_ids = ["R_EX_o2_e", "R_EX_nh4_e", "R_EX_pi_e", "R_EX_so4_e",
@@ -70,14 +71,15 @@ p = Parameters(
     0.0,     # q_benz
     mu_max_vector,
     e_max_vector,
-    0.2,     # f_prod: 20% van groei naar Benzonase
-    5.0      # Y_benz: mmol Benzonase per gDW groei-verlies
+    0.0015,     # f_prod: 0.15% van groei naar Benzonase
+    0.05      # Y_benz: mmol Benzonase per gDW groei-verlies
 )
 
 sol = run(p)
 
 include("./plotting.jl")
 
+# --- OPTIMALISATIE ---
 # --- OPTIMALISATIE ---
 println("--- Optimalisatie proces gestart ---")
 tspan = (0.0, duration)

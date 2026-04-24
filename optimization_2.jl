@@ -44,7 +44,8 @@ function evaluate_benzonase(moi::Float64, t_inf::Float64, biomass::Float64, p_ba
         p_base.q_benz,
         copy(p_base.mu_max),
         copy(p_base.e_max),
-        p_base.f_prod
+        p_base.f_prod,
+        p_base.Y_benz
     )
 
     try
@@ -67,7 +68,7 @@ function run_optimization(p_initial::Parameters, tspan)
     # MOI is vastgezet op 2.0
     # ----------------------------------------------------------
     moi_values     = [2.0]
-    t_inf_values   = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0, 15.0]
+    t_inf_values   = [1.0, 2.0, 3.0, 5.0, 7.0]
     biomass_values = [1e5, 1e6, 1e7, 1e8, 1e9, 1e10]
 
     best_val     = -Inf
@@ -130,7 +131,7 @@ function run_optimization(p_initial::Parameters, tspan)
     rho_nm   = 0.5
     sigma_nm = 0.5
 
-    max_iter = 200
+    max_iter = 100
     tol      = 1e-4
 
     for iter in 1:max_iter

@@ -1,3 +1,4 @@
+import Pkg
 using Pkg
 Pkg.activate(".")
 Pkg.add([
@@ -15,3 +16,4 @@ Pkg.add([
 ])
 Pkg.instantiate()
 Pkg.precompile()
+
