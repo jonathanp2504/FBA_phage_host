@@ -2,7 +2,7 @@
 
 julia_version = "1.11.7"
 manifest_format = "2.0"
-project_hash = "80e8cd8f0289c7ffb9eb308a85c2da287d7bb0ef"
+project_hash = "0f9e995461cd575b2893c4d05cd86366ad27f8e3"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "f7304359109c768cf32dc5fa2d371565bb63b68a"
@@ -337,7 +337,7 @@ version = "1.16.2+0"
 
 [[deps.DelayDiffEq]]
 deps = ["ArrayInterface", "ConcreteStructs", "DataStructures", "DiffEqBase", "FastBroadcast", "ForwardDiff", "LinearAlgebra", "Logging", "OrdinaryDiffEq", "OrdinaryDiffEqCore", "OrdinaryDiffEqDefault", "OrdinaryDiffEqDifferentiation", "OrdinaryDiffEqFunctionMap", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqRosenbrock", "Printf", "RecursiveArrayTools", "Reexport", "SciMLBase", "SciMLLogging", "SimpleNonlinearSolve", "SymbolicIndexingInterface"]
-git-tree-sha1 = "c4b5c6d91acd09165f8cbabc4eefdc10350bce68"
+path = "C:\\Users\\Jonathan\\Downloads\\thesis\\FBA_phage_host\\LocalPackages\\DelayDiffEq"
 uuid = "bcd4f6db-9728-5f36-b5f7-82caef46ccdb"
 version = "5.67.1"
 
@@ -1334,15 +1334,15 @@ weakdeps = ["MathOptInterface"]
 
 [[deps.Optimization]]
 deps = ["ADTypes", "ArrayInterface", "ConsoleProgressMonitor", "DocStringExtensions", "LinearAlgebra", "Logging", "LoggingExtras", "OptimizationBase", "Printf", "Reexport", "SciMLBase", "SparseArrays", "TerminalLoggers"]
-git-tree-sha1 = "2c409c814c2d745620fdd55391a66ee514561146"
+git-tree-sha1 = "5366b739224064a03399be1a21a18e4553631181"
 uuid = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
-version = "5.5.0"
+version = "5.5.1"
 
 [[deps.OptimizationBase]]
 deps = ["ADTypes", "ArrayInterface", "DifferentiationInterface", "DocStringExtensions", "FastClosures", "LinearAlgebra", "PDMats", "PrecompileTools", "Reexport", "SciMLBase", "SciMLLogging", "SparseArrays", "SparseConnectivityTracer", "SparseMatrixColorings", "SymbolicIndexingInterface"]
-git-tree-sha1 = "a3d7837832e515111c95a02df7dc55edbdf17d8a"
+git-tree-sha1 = "6c10a4e4c3a74bf4b6c1fa0c1b8bcec683007762"
 uuid = "bca83a33-5cc9-4baa-983d-23429ab6bcbb"
-version = "5.1.0"
+version = "5.1.2"
 
     [deps.OptimizationBase.extensions]
     OptimizationChainRulesCoreExt = "ChainRulesCore"
@@ -1370,9 +1370,9 @@ version = "5.1.0"
 
 [[deps.OptimizationOptimJL]]
 deps = ["Optim", "OptimizationBase", "Reexport", "SciMLBase", "SparseArrays"]
-git-tree-sha1 = "eb89577770d4a956010745f182ebea9d8ea714f8"
+git-tree-sha1 = "c1494ecd921c413ce27706784e06907a4ed5bfc1"
 uuid = "36348300-93cb-4f02-beb5-3c3902f8871e"
-version = "0.4.11"
+version = "0.4.14"
 
 [[deps.Opus_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
