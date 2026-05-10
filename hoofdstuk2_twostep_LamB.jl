@@ -19,9 +19,9 @@ end
 # ============================================================
 #  Model 1 laden (pas pad aan naar jouw structuur)
 # ============================================================
-include("./Bin_model1/parameters.jl")
-include("./Bin_model1/FBA.jl")
-include("./Bin_model1/dFBA.jl")
+include("./Bin_model_1/parameters.jl")
+include("./Bin_model_1/FBA.jl")
+include("./Bin_model_1/dFBA.jl")
 
 const M1_Sind_S = Sind_S; const M1_Sind_I = Sind_I
 const M1_Sind_L = Sind_L; const M1_Pfind  = Pfind
@@ -33,9 +33,9 @@ run_m1 = run  # alias
 # Laad Model 2 in een apart scope via include met hernoeming
 # In de praktijk: gebruik aparte Julia sessie of modules
 # Hier nemen we aan dat je Model 2 bestanden apart staan
-include("./Bin_model2/parameters.jl")   # overschrijft Parameters struct
-include("./Bin_model2/FBA.jl")
-include("./Bin_model2/dFBA.jl")
+include("./Bin_model_2/parameters.jl")
+include("./Bin_model_2/FBA.jl")
+include("./Bin_model_2/dFBA.jl")
 
 # Gedeelde parameters (identiek voor beide modellen)
 model_path    = joinpath(@__DIR__, "iJO1366.xml")

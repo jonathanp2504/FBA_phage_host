@@ -55,9 +55,9 @@ lysogenFba   = buildFbaCache(lysogenModel, exchange_ids, "R_BIOMASS_Ec_iJO1366_c
 #  Simuleer Model 3 (vast b=170)
 # ============================================================
 println("=== Simulatie Model 3 (vast b=170) ===")
-include("./Bin_model3/parameters.jl")
-include("./Bin_model3/FBA.jl")
-include("./Bin_model3/dFBA.jl")
+include("./Bin_model_3/parameters.jl")
+include("./Bin_model_3/FBA.jl")
+include("./Bin_model_3/dFBA.jl")
 
 p3 = Parameters(duration, N0, alpha_syn, beta_deg, K_s, V_max, p_pref,
     tau, 170.0, E_coli_cellDW, MW_values, h_release,
@@ -79,9 +79,9 @@ println("  Max Benzonase: $(round(maximum(B3), sigdigits=3)) mmol/L")
 #  Simuleer Model 4 (lineaire b(µ) = b0 + kb*µN)
 # ============================================================
 println("=== Simulatie Model 4 (lineaire burst size) ===")
-include("./Bin_model4/parameters.jl")
-include("./Bin_model4/FBA.jl")
-include("./Bin_model4/dFBA.jl")
+include("./Bin_model_4/parameters.jl")
+include("./Bin_model_4/FBA.jl")
+include("./Bin_model_4/dFBA.jl")
 
 b0 = 50.0; kb = 95.2
 p4 = Parameters(duration, N0, alpha_syn, beta_deg, K_s, V_max, p_pref,
@@ -105,9 +105,9 @@ println("  Max Benzonase: $(round(maximum(B4), sigdigits=3)) mmol/L")
 #  Simuleer Model 5 (FBA burst size)
 # ============================================================
 println("=== Simulatie Model 5 (FBA burst size) ===")
-include("./Bin_model5/parameters.jl")
-include("./Bin_model5/FBA.jl")
-include("./Bin_model5/dFBA.jl")
+include("./Bin_model_5/parameters.jl")
+include("./Bin_model_5/FBA.jl")
+include("./Bin_model_5/dFBA.jl")
 
 lyticModel = addPhage!(loadFBAmodel(model_path), phage_stoich)
 lyticFba   = buildLyticFbaCache(lyticModel, exchange_ids,

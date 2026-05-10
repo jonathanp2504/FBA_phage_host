@@ -18,9 +18,9 @@ if !isdefined(OrdinaryDiffEqCore, :DEVerbosity)
 end
 
 # Laad Model 3 (Benzonase in FBA) — dit is je huidige meest complexe model
-include("./Bin_model3/parameters.jl")
-include("./Bin_model3/FBA.jl")
-include("./Bin_model3/dFBA.jl")
+include("./Bin_model_3/parameters.jl")
+include("./Bin_model_3/FBA.jl")
+include("./Bin_model_3/dFBA.jl")
 include("optimization_weighted_B.jl")
 
 model_path    = joinpath(@__DIR__, "iJO1366.xml")
