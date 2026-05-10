@@ -11,6 +11,7 @@
 #    include("optimization_weighted_B.jl")
 #    resultaat = run_optimization_B(p)
 # ============================================================
+include("./Bin_model_3/dFBA.jl")
 using OrdinaryDiffEq
 using DelayDiffEq
 import OrdinaryDiffEqCore
@@ -20,7 +21,6 @@ end
 
 include("./Bin_model_3/parameters.jl")
 include("./Bin_model_3/FBA.jl")
-include("./Bin_model_3/dFBA.jl")
 
 using COBREXA, AbstractFBCModels
 import SBMLFBCModels
