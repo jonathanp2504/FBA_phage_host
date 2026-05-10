@@ -1,21 +1,17 @@
 using JuMP
 
-# indices in state vector u:
-# 1:4   -> Substraten
-const Sind = 1:4
-# 5:8   -> Enzymen
-const Eind = 5:8
-# N 
-const Nind = Eind[end]+1
-const Dind = Nind+1
-const Lind = Dind+1
-const lind = Lind+1
-# P (Vrije fagen)
-const Pfind = lind+1
-const Paind = Pfind+1
-const MOIind = Paind+1
-# Benz (Benzonase)
+const Sind    = 1:4
+const Eind    = 5:8
+const Nind    = Eind[end]+1
+const Dind    = Nind+1
+const Lind    = Dind+1
+const lind    = Lind+1
+const Pfind   = lind+1
+const Paind   = Pfind+1
+const MOIind  = Paind+1
 const Benzind = MOIind+1
+
+const AVOGADRO = 6.022e23
 
 mutable struct FbaCache
     optimizer::JuMP.Model
@@ -26,72 +22,46 @@ mutable struct FbaCache
     benz_id::Union{Nothing, String}
 end
 
-mutable struct Parameters 
-    # simulation settings
+mutable struct Parameters
     duration::Float64
     startingBiomass::Float64
-    
-    # Cybernetica & Kinetiek
-    alpha_syn::Float64 
+    alpha_syn::Float64
     beta_deg::Float64
     K_s::Vector{Float64}
     V_max::Vector{Float64}
     p_pref::Vector{Float64}
-    
-    # Phage-Host Parameters
     tau::Float64
-    b::Float64
     E_coli_cellDW::Float64
     MW::Vector{Float64}
     h_release::Float64
-
-    # Model IDs (iJO1366 specifiek)
     biomass_id::String
     ex_ids::Vector{String}
     all_exchanges::Vector{String}
     essentials::Vector{String}
-    fbaModelNaive::FbaCache
-    fbaModelLysogen::FbaCache
-
-    # Resultaten voor Naïeve cellen (N)
+    fbaModelNaive::FbaCache      # objectief: max groei
+    fbaModelLysogen::FbaCache    # objectief: max groei + Benzonase lower bound
+    fbaModelLytic::FbaCache      # objectief: max faagproductie (NIET groei)
     mu_N::Float64
     q_N::Vector{Float64}
-
-    # Resultaten voor Lysogene cellen (l)
     mu_l::Float64
     q_l::Vector{Float64}
-    q_benz_l::Float64  # Alleen de lysogenen produceren benzonase
-
-    # --- NIEUWE ADSORPTIE PARAMETERS (LADDER) ---
-    k_attach::Float64        # Binding rate (L / gDW / h) - voorheen alfa_ads
-    k_dettach::Float64       # Loskoppelingsrate (1/h)
-    k_inject::Float64       # Injectierate (1/h) - de stap van S_i naar I
-    K_mal::Float64       # Affiniteit voor LamB (verzadiging van de ladder)
-
+    q_benz_l::Float64
+    q_phage_L::Float64           # faagproductieflux uit lytische FBA [mmol/gDW/h]
+    k_attach::Float64
+    k_dettach::Float64
+    k_inject::Float64
+    K_mal::Float64
     infection_time::Float64
     infection_dose::Float64
-
-    # benzonase parameters
-    benz_id::String    # Het ID van de reactie in de FBA
-    k_tox::Float64     # Toxiciteitscoëfficiënt
-    beta_benz::Float64 # Afbraaksnelheid enzym
-    q_benz::Float64    # Opslag voor de berekende flux
-
-    mu_max::Vector{Float64}   # [1.33, 1.26, 1.10, 0.29]
-    e_max::Vector{Float64}    # Wordt berekend bij start
+    benz_id::String
+    phage_id::String             # "R_PHAGE_prod"
+    k_tox::Float64
+    beta_benz::Float64
+    q_benz::Float64
+    mu_max::Vector{Float64}
+    e_max::Vector{Float64}
     f_prod::Float64
 end
-
-
-# 2. Receptor-factor (Storms: Michaelis-Menten verzadiging van LamB)
-#function f_receptor(u, p::Parameters)
-    # We halen het relatieve niveau van maltose-enzymen op
-    #e_mal = u[p.ind_e[2]] 
-    #return e_mal / (p.K_mal + e_mal + 1e-15)
-#end
-
-
-## --- POPULATIE DYNAMICA ---
 
 function getPhi(u, p::Parameters)
     return u[MOIind]
@@ -106,78 +76,57 @@ function getTotalBiomass(u, p::Parameters)
     return u[Nind] + u[Dind] + u[Lind] + u[lind]
 end
 
-#function getTotalAdsorptionFlux(u, mu_werkelijk, u_cyt, p::Parameters)
-    #X_tot = getTotalBiomass(u, p)
-    #alpha_nu = get_alpha_eff(u, mu_werkelijk, u_cyt, p)
-    #return alpha_nu * X_tot * u[p.ind_P]
-#end
-
-#function getNewInfectionFlux(u, mu_werkelijk, u_cyt, p::Parameters)
-    #alpha_nu = get_alpha_eff(u, mu_werkelijk, u_cyt, p)
-    #return alpha_nu * u[p.ind_S] * u[p.ind_P]
-#end
-
-#function getAlfa_eff(u, p::Parameters)
-    #e_mal = u[p.ind_e[2]] # Stel dat maltose het 2e substraat is
-    #e_mal loopt van 0 tot 1 (relatief enzymniveau)
-    #We koppelen dit aan de maximale alfa_ads
-    #base_leak = 0.001 # 0.1% basale expressie
-    #return p.alfa_ads * (base_leak + (1 - base_leak) * e_mal)
-#end
-
-
 function getPhages(u, p::Parameters)
     return u[Pfind]
 end
 
 function getMu_avg(p, u)
-    # u[Nind] en u[lind] zijn de actuele aantallen uit de toestandsvector
     total_cells = u[Nind] + u[lind]
-    
     if total_cells > 1e-6
         return (p.mu_N * u[Nind] + p.mu_l * u[lind]) / total_cells
     else
-        return p.mu_N # Fallback naar gezonde groei
+        return p.mu_N
     end
 end
 
-
 benz_stoich = Dict(
-    # Aminozuren (Inputs vanuit het Cytosol, sequentie via uniprot)
-    "M_ala__L_c" => -33.0, 
-    "M_arg__L_c" => -13.0, 
-    "M_asn__L_c" => -22.0, 
-    "M_asp__L_c" => -16.0, 
-    "M_cys__L_c" => -4.0,  
-    "M_gln__L_c" => -12.0, 
-    "M_glu__L_c" => -10.0, 
-    "M_gly_c"    => -21.0, 
-    "M_his__L_c" => -4.0, 
-    "M_ile__L_c" => -8.0,  
-    "M_leu__L_c" => -21.0, 
-    "M_lys__L_c" => -14.0, 
-    "M_met__L_c" => -3.0,  
-    "M_phe__L_c" => -8.0,  
-    "M_pro__L_c" => -10.0, 
-    "M_ser__L_c" => -19.0, 
-    "M_thr__L_c" => -15.0, 
-    "M_trp__L_c" => -5.0,  
-    "M_tyr__L_c" => -10.0, 
-    "M_val__L_c" => -10.0,
+    "M_ala__L_c" => -33.0, "M_arg__L_c" => -13.0, "M_asn__L_c" => -22.0,
+    "M_asp__L_c" => -16.0, "M_cys__L_c" => -4.0,  "M_gln__L_c" => -12.0,
+    "M_glu__L_c" => -10.0, "M_gly_c"    => -21.0, "M_his__L_c" => -4.0,
+    "M_ile__L_c" => -8.0,  "M_leu__L_c" => -21.0, "M_lys__L_c" => -14.0,
+    "M_met__L_c" => -3.0,  "M_phe__L_c" => -8.0,  "M_pro__L_c" => -10.0,
+    "M_ser__L_c" => -19.0, "M_thr__L_c" => -15.0, "M_trp__L_c" => -5.0,
+    "M_tyr__L_c" => -10.0, "M_val__L_c" => -10.0,
+    "M_atp_c" => -532.0, "M_adp_c" =>  532.0,
+    "M_gtp_c" => -532.0, "M_gdp_c" =>  532.0,
+    "M_h2o_c" => -1064.0, "M_pi_c" => 1064.0, "M_h_c" => 1064.0,
+    "M_benzonase_c" => 1.0
+)
 
-    # Energieverbruik volgens de paper (Totaal 266 AA)
-    # 1. ATP Gedeelte (2 ATP per AA = 532)
-    "M_atp_c"    => -532.0,
-    "M_adp_c"    =>  532.0, # (Let op: Strikt genomen AMP, maar in FBA vaak ADP voor balans)
-    
-    # 2. GTP Gedeelte (2 GTP per AA = 532)
-    "M_gtp_c"    => -532.0,
-    "M_gdp_c"    =>  532.0,
-
-    # Overige bijproducten voor de massa-balans (P_i en H+)
-    "M_h2o_c"    => -1064.0,
-    "M_pi_c"     =>  1064.0,
-    "M_h_c"      =>  1064.0,
-    # Product (De 'M_benzonase_c' die je zelf aanmaakt)
-    "M_benzonase_c" => 1.0 
+# ============================================================
+#  Phage lambda stoichiometrie
+#  Bron: UniProt P03746 (gpE, 341 AA) en P03745 (gpD, 109 AA)
+#  Kapside: T=7 icosahedron, 405 kopieën gpE + 405 kopieën gpD
+#  DNA: 48502 bp dsDNA, GC content 49.9%
+#  Energiekost translatie: 2 ATP + 2 GTP per aminozuur
+#  Noot: staarteiwitten (~6 eiwitten, <50 kopieën elk) weggelaten
+#        als vereenvoudiging (<5% van totale eiwitbiomassa)
+# ============================================================
+phage_stoich = Dict(
+    "M_ala__L_c" => -50625.0, "M_arg__L_c" => -8100.0,
+    "M_asn__L_c" => -6885.0,  "M_asp__L_c" => -6885.0,
+    "M_gln__L_c" => -36045.0, "M_glu__L_c" => -8100.0,
+    "M_gly_c"    => -7290.0,  "M_his__L_c" => -405.0,
+    "M_ile__L_c" => -10530.0, "M_leu__L_c" => -20655.0,
+    "M_lys__L_c" => -12150.0, "M_met__L_c" => -2835.0,
+    "M_phe__L_c" => -3240.0,  "M_pro__L_c" => -3240.0,
+    "M_ser__L_c" => -13365.0, "M_thr__L_c" => -14985.0,
+    "M_tyr__L_c" => -5265.0,  "M_val__L_c" => -8100.0,
+    "M_atp_c"    => -437400.0, "M_adp_c"   =>  437400.0,
+    "M_gtp_c"    => -437400.0, "M_gdp_c"   =>  437400.0,
+    "M_h2o_c"    => -874800.0, "M_pi_c"    =>  874800.0,
+    "M_h_c"      =>  874800.0,
+    "M_datp_c"   => -12149.0,  "M_dttp_c"  => -12149.0,
+    "M_dgtp_c"   => -12101.0,  "M_dctp_c"  => -12101.0,
+    "M_phage_c"  => 1.0
 )
