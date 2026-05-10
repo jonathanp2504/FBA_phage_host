@@ -11,8 +11,8 @@
 # ============================================================
 
 include("setup_model_4.jl")
-include("optimization_weighted_A.jl")
-include("optimization_weighted_B.jl")
+include("optimization_weighted_A_model4.jl")
+include("optimization_weighted_B_model4.jl")
 
 # --- Optimizer A ---
 println("\n=== Optimizer A: MOI + infectietijdstip (vaste biomassa) ===")
