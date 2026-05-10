@@ -9,9 +9,6 @@ using UnPack
 include("./parameters.jl")
 include("./FBA.jl")
 
-# Inject missing DEVerbosity before DelayDiffEq loads
-import OrdinaryDiffEqCore
-using DelayDiffEq
 function run(p::Parameters)
     # INITIALISATIE
     # [Glc, Mal, Glyc, Ac, e_glc, e_mal, e_Glyc, e_ac, S, I, L, P, Benz] (subs in mmol/l)

@@ -12,18 +12,14 @@
 #    resultaat = run_optimization_B(p)
 # ============================================================
 include("./Bin_model_3/dFBA.jl")
-using OrdinaryDiffEq
-using DelayDiffEq
-import OrdinaryDiffEqCore
-if !isdefined(OrdinaryDiffEqCore, :DEVerbosity)
-    Core.eval(OrdinaryDiffEqCore, :(const DEVerbosity = () -> true))
-end
+
+using Plots, Statistics, SciMLBase
+using COBREXA, AbstractFBCModels
+import SBMLFBCModels
 
 include("./Bin_model_3/parameters.jl")
 include("./Bin_model_3/FBA.jl")
 
-using COBREXA, AbstractFBCModels
-import SBMLFBCModels
 
 model_path   = joinpath(@__DIR__, "iJO1366.xml")
 naiveModel   = loadFBAmodel(model_path)
