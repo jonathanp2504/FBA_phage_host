@@ -1,16 +1,13 @@
-module DEVerbosityPatch
-    using OrdinaryDiffEqCore
-    if !isdefined(OrdinaryDiffEqCore, :DEVerbosity)
-        const DEVerbosity = false
-        export DEVerbosity
-    end
+import OrdinaryDiffEqCore
+if !isdefined(OrdinaryDiffEqCore, :DEVerbosity)
+    Core.eval(OrdinaryDiffEqCore, :(const DEVerbosity = () -> true))
 end
-using .DEVerbosityPatch
+using OrdinaryDiffEq
+using DelayDiffEq
+using UnPack
 
 include("./parameters.jl")
 include("./FBA.jl")
-using UnPack
-using OrdinaryDiffEq
 
 # Inject missing DEVerbosity before DelayDiffEq loads
 import OrdinaryDiffEqCore
