@@ -17,8 +17,8 @@ using SciMLBase
 
 # Referentiewaarden voor normalisatie
 # Pas deze aan na een eerste exploratieve run
-const BENZ_REF_A  = 1e-4    # typische max Benzonase [mmol/L]
-const PN_REF_A    = 1e8     # typische P/N eindverhouding [-]
+const BENZ_REF_A  = 1e-3    # typische max Benzonase [mmol/L]
+const PN_REF_A    = 1e6     # typische P/N eindverhouding [-]
 const FIXED_BIOMASSA = 1e9  # vaste beginbiomassa [cellen/L]
 const FIXED_MOI_A    = 2.0  # vaste MOI
 
@@ -87,7 +87,7 @@ function evaluate_weighted_A(t_inf::Float64, moi::Float64,
         # Gewogen objectief: maximaliseer (hoog = goed)
         # + benz_norm: hogere Benzonase is beter
         # - PN_norm:   lagere P/N is beter (vandaar het minteken)
-        return 0.8 * benz_norm - 0.2 * PN_norm
+        return 0.95 * benz_norm - 0.05 * PN_norm
 
     catch e
         @warn "Simulatie gefaald t_inf=$t_inf, moi=$moi: $e"

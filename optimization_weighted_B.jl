@@ -15,8 +15,8 @@ using SciMLBase
 #  4. Pas de constanten hieronder aan
 # ============================================================
 
-const BENZ_REF_B = 1e-4
-const PN_REF_B   = 1e8
+const BENZ_REF_B = 1e-3
+const PN_REF_B   = 1e6
 const FIXED_MOI_B = 2.0
 
 function evaluate_weighted_B(t_inf::Float64, biomass::Float64, p_base::Parameters)
@@ -73,7 +73,7 @@ function evaluate_weighted_B(t_inf::Float64, biomass::Float64, p_base::Parameter
         PN_ratio = final_N > 1.0 ? final_P / final_N : 1e12
         PN_norm  = PN_ratio / PN_REF_B
 
-        return 0.8 * benz_norm - 0.2 * PN_norm
+        return 0.95 * benz_norm - 0.05 * PN_norm
 
     catch e
         @warn "Simulatie gefaald t_inf=$t_inf, biomass=$biomass: $e"
