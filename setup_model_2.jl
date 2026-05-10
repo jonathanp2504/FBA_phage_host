@@ -11,17 +11,14 @@
 #    include("optimization_weighted_B.jl")
 #    resultaat = run_optimization_B(p)
 # ============================================================
-using OrdinaryDiffEq
-using DelayDiffEq
-import OrdinaryDiffEqCore
-if !isdefined(OrdinaryDiffEqCore, :DEVerbosity)
-    Core.eval(OrdinaryDiffEqCore, :(const DEVerbosity = () -> true))
-end
+include("./Bin_model_2/dFBA.jl")
+
+using Plots, Statistics, SciMLBase
+using COBREXA, AbstractFBCModels
+import SBMLFBCModels
 
 include("./Bin_model_2/parameters.jl")
 include("./Bin_model_2/FBA.jl")
-include("./Bin_model_2/dFBA.jl")
-
 using COBREXA, AbstractFBCModels
 import SBMLFBCModels
 

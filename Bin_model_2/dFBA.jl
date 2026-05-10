@@ -4,13 +4,12 @@ if !isdefined(OrdinaryDiffEqCore, :DEVerbosity)
 end
 using OrdinaryDiffEq
 using DelayDiffEq
+using UnPack
+
 
 include("./parameters.jl")
 include("./FBA.jl")
-using UnPack
-using OrdinaryDiffEq
-import OrdinaryDiffEqCore
-using DelayDiffEq
+
 
 function run(p::Parameters)
     u0 = zeros(23)
