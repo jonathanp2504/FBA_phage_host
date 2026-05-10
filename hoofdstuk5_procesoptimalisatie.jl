@@ -19,9 +19,9 @@ if !isdefined(OrdinaryDiffEqCore, :DEVerbosity)
 end
 
 # Laad het beste model (Model 3 als uitgangspunt, pas aan naar best uit H4)
-include("./Bin_model3/parameters.jl")
-include("./Bin_model3/FBA.jl")
-include("./Bin_model3/dFBA.jl")
+include("./Bin_model_3/parameters.jl")
+include("./Bin_model_3/FBA.jl")
+include("./Bin_model_3/dFBA.jl")
 include("optimization_weighted_B.jl")
 
 model_path    = joinpath(@__DIR__, "iJO1366.xml")
