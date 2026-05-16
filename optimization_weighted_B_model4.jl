@@ -11,7 +11,7 @@ using SciMLBase
 # ============================================================
 
 const BENZ_REF_B  = 2.0e-3
-const PN_REF_B    = 6.0e12
+const PN_REF_B    = 3.0e9
 const FIXED_MOI_B = 2.0
 
 function evaluate_weighted_B(t_inf::Float64, biomass::Float64,
@@ -70,7 +70,7 @@ function evaluate_weighted_B(t_inf::Float64, biomass::Float64,
         PN_ratio = final_N > 1.0 ? final_P / final_N : 1e12
         PN_norm  = PN_ratio / PN_REF_B
 
-        return 0.8 * benz_norm - 0.05 * PN_norm
+        return 0.8 * benz_norm - 0.2 * PN_norm
 
     catch e
         @warn "Simulatie gefaald t_inf=$t_inf, biomass=$biomass: $e"

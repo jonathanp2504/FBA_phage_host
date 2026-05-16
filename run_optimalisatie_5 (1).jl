@@ -1,35 +1,81 @@
 # ============================================================
-#  RUN OPTIMALISATIE MODEL 5
-#  Voer eerst run_kalibratie_5.jl uit en pas de BENZ_REF en
-#  PN_REF waarden aan in de optimizer bestanden voordat je
-#  dit bestand runt.
-#
-#  Optimizer A: optimaliseert MOI + infectietijdstip
-#               beginbiomassa vast op FIXED_BIOMASSA (1e9)
-#  Optimizer B: optimaliseert infectietijdstip + beginbiomassa
-#               MOI vast op FIXED_MOI_B (2.0)
+#  RUN SCRIPT — OPTIMIZER MODEL 5
+#  Optimizer A: vaste biomassa (1e9), optimaliseert MOI + t_inf
+#  Optimizer B: vaste MOI (2.0), optimaliseert t_inf + biomassa
 # ============================================================
+include("Model5.jl")
+include("optimizer_utils.jl")
+include("run_optimalisatie_A_M5.jl")
+include("run_optimalisatie_B_M5.jl")
 
-include("setup_model_5.jl")
-include("optimization_weighted_A_model5.jl")
-include("optimization_weighted_B_model5.jl")
+using Plots, Printf, JuMP, HiGHS
+using COBREXA, AbstractFBCModels
+import SBMLFBCModels
 
-# --- Optimizer A ---
-println("\n=== Optimizer A: MOI + infectietijdstip (vaste biomassa) ===")
-resultaat_A = run_optimization_A(p)
-println("\nResultaat A:")
-println("  MOI              : ", round(resultaat_A.best_moi,     digits=4))
-println("  Infectietijdstip : ", round(resultaat_A.best_t_inf,   digits=2), " h")
-println("  Beginbiomassa    : ", round(resultaat_A.best_biomass, sigdigits=3), " cellen/L")
-println("  Score            : ", round(resultaat_A.best_score,   digits=6))
+model_path     = joinpath(@__DIR__, "iJO1366.xml")
+alpha_syn      = 2.0;  beta_deg = 0.5
+K_s            = [0.0061, 9.4e-4, 0.0543, 8.33]
+tau            = 1.32
+p_pref         = [0.8925, 0.08925, 0.008925, 0.008925]
+V_max          = [0.0, 2.26, 0.0, 10.0]
+exchange_ids   = ["R_EX_glc__D_e", "R_EX_malt_e", "R_EX_glyc_e", "R_EX_ac_e"]
+essentials_ids = ["R_EX_o2_e","R_EX_nh4_e","R_EX_pi_e","R_EX_so4_e",
+                  "R_EX_k_e","R_EX_mg2_e","R_EX_ca2_e","R_EX_cl_e",
+                  "R_EX_fe2_e","R_EX_fe3_e","R_EX_mn2_e","R_EX_zn2_e",
+                  "R_EX_cu2_e","R_EX_cobalt2_e","R_EX_mobd_e","R_EX_thi_e",
+                  "R_EX_ni2_e","R_EX_sel_e","R_EX_slnt_e","R_EX_tungs_e"]
+MW_values      = [180.16, 342.3, 92.09, 60.05]
+h_release      = 1.71e-12;  duration = 20.0
+mu_max_vector  = [0.76, 0.76, 1.10, 0.30]
+e_max_vector   = (alpha_syn .+ 0.001) ./ (beta_deg .+ mu_max_vector)
+E_coli_cellDW  = 1.0e-12
 
-# --- Optimizer B ---
-println("\n=== Optimizer B: infectietijdstip + biomassa (vaste MOI=2.0) ===")
-resultaat_B = run_optimization_B(p)
-println("\nResultaat B:")
-println("  MOI (vast)       : ", resultaat_B.best_moi)
-println("  Infectietijdstip : ", round(resultaat_B.best_t_inf,   digits=2), " h")
-println("  Beginbiomassa    : ", round(resultaat_B.best_biomass, sigdigits=3), " cellen/L")
-println("  Score            : ", round(resultaat_B.best_score,   digits=6))
+naiveModel5   = Model5.loadFBAmodel(model_path)
+lysogenModel5 = Model5.addBenzonase!(Model5.loadFBAmodel(model_path), Model5.benz_stoich)
+lyticModel5   = Model5.addPhage!(Model5.loadFBAmodel(model_path), Model5.phage_stoich)
+all_ex_ids    = [id for id in keys(naiveModel5.reactions) if startswith(id, "R_EX_")]
+naiveFba5     = Model5.buildFbaCache(naiveModel5, exchange_ids,
+                    "R_BIOMASS_Ec_iJO1366_core_53p95M")
+lysogenFba5   = Model5.buildFbaCache(lysogenModel5, exchange_ids,
+                    "R_BIOMASS_Ec_iJO1366_core_53p95M"; benz_id="R_BENZ_prod")
+lyticFba5     = Model5.buildLyticFbaCache(lyticModel5, exchange_ids,
+                    "R_BIOMASS_Ec_iJO1366_core_53p95M", "R_PHAGE_prod")
 
-println("\n=== Optimalisatie Model 5 voltooid ===")
+p_initial = Model5.Parameters(duration, 1e9, alpha_syn, beta_deg, K_s, V_max, p_pref,
+    tau, 1e-12, MW_values, h_release,
+    "R_BIOMASS_Ec_iJO1366_core_53p95M", exchange_ids, all_ex_ids, essentials_ids,
+    naiveFba5, lysogenFba5, lyticFba5,
+    0.0, zeros(4), 0.0, zeros(4), 0.0, 0.0,
+    7.92e-8, 6.48, 3.02, 0.01,
+    2.0, 2.0*1e9,
+    "R_BENZ_prod", "R_PHAGE_prod",
+    0.05, 0.1, 0.0,
+    mu_max_vector, e_max_vector, 0.0015)
+
+println("=== BENZ_REF berekening voor Model 5 ===")
+setup_optimizer_A(lysogenModel5, exchange_ids, V_max,
+                  "R_BIOMASS_Ec_iJO1366_core_53p95M", "R_BENZ_prod",
+                  E_coli_cellDW, duration)
+BENZ_REF_B[] = BENZ_REF_A[]
+
+println("\n" * "="^60)
+println("OPTIMIZER A — MODEL 5")
+println("="^60)
+res_A = run_optimization_A(p_initial)
+println("\nResultaat A: MOI=$(round(res_A.best_moi,digits=4)) | ",
+        "t_inf=$(round(res_A.best_t_inf,digits=2)) h | ",
+        "score=$(round(res_A.best_score,digits=6))")
+
+println("\n" * "="^60)
+println("OPTIMIZER B — MODEL 5")
+println("="^60)
+res_B = run_optimization_B(p_initial)
+println("\nResultaat B: t_inf=$(round(res_B.best_t_inf,digits=2)) h | ",
+        "N0=$(round(res_B.best_N0,sigdigits=3)) cellen/L | ",
+        "score=$(round(res_B.best_score,digits=6))")
+
+println("\n" * "="^60)
+println("PARETO-FRONT — MODEL 5")
+println("="^60)
+pareto_A = run_pareto_A(p_initial; n_weights=11, figname="pareto_A_M5.png")
+pareto_B = run_pareto_B(p_initial; n_weights=11, figname="pareto_B_M5.png")

@@ -12,7 +12,7 @@ using SciMLBase
 # ============================================================
 
 const BENZ_REF_B  = 2.0e-3
-const PN_REF_B    = 6.0e12
+const PN_REF_B    = 1.06e12
 const FIXED_MOI_B = 2.0
 
 function evaluate_weighted_B(t_inf::Float64, biomass::Float64,
@@ -72,7 +72,7 @@ function evaluate_weighted_B(t_inf::Float64, biomass::Float64,
         PN_ratio = final_N > 1.0 ? final_P / final_N : 1e12
         PN_norm  = PN_ratio / PN_REF_B
 
-        return 0.8 * benz_norm - 0.05 * PN_norm
+        return 0.8 * benz_norm - 0.2 * PN_norm
 
     catch e
         @warn "Simulatie gefaald t_inf=$t_inf, biomass=$biomass: $e"
@@ -96,6 +96,11 @@ function run_optimization_B(p_initial::Parameters)
         for biomass in biomass_values
             counter += 1
             score = evaluate_weighted_B(t_inf, biomass, p_initial)
+            # Sla scores van exact 0.0 over — geen productie/fagen, biologisch betekenisloos
+            if score == 0.0
+                println("  [$counter/$total] t_inf=$t_inf | biomass=$biomass | score=0.0 (overgeslagen)")
+                continue
+            end
             println("  [$counter/$total] t_inf=$t_inf | biomass=$biomass | score=$(round(score, digits=5))")
             if score > best_score
                 best_score   = score
@@ -104,10 +109,22 @@ function run_optimization_B(p_initial::Parameters)
             end
         end
     end
+
+    # Als alle grid-punten nul of -Inf zijn
+    if best_score == -Inf
+        @warn "Alle grid-punten gaven score 0.0 of -Inf. Controleer kalibratie en parameters."
+        return (best_moi=FIXED_MOI_B, best_t_inf=t_inf_values[2],
+                best_biomass=biomass_values[3], best_score=-Inf)
+    end
+
     println("\nBeste grid-punt: t_inf=$best_tinf | biomass=$best_biomass | score=$best_score")
 
     println("\nNelder-Mead verfijning B...")
-    f_nm(x) = evaluate_weighted_B(x[1], x[2], p_initial)
+    function f_nm(x)
+        score = evaluate_weighted_B(x[1], x[2], p_initial)
+        # Behandel score 0.0 als -Inf voor Nelder-Mead
+        return score == 0.0 ? -Inf : score
+    end
 
     x0    = [best_tinf, best_biomass]
     delta = [1.0, best_biomass * 0.3]

@@ -25,30 +25,30 @@ include("./Bin_model_5/FBA.jl")
 using COBREXA, AbstractFBCModels
 import SBMLFBCModels
 
-model_path   = joinpath(@__DIR__, "iJO1366.xml")
+model_path = joinpath(@__DIR__, "iJO1366.xml")
+model      = loadFBAmodel(model_path)
 naiveModel   = loadFBAmodel(model_path)
 lysogenModel = addBenzonase!(loadFBAmodel(model_path), benz_stoich)
 lyticModel   = addPhage!(loadFBAmodel(model_path), phage_stoich)
 
-alpha_syn      = 2.0;   beta_deg = 0.5
-K_s            = [0.0278, 0.0146, 0.0543, 0.0833]
-tau            = 1.0
-p_pref         = [0.8925, 0.08925, 0.008925, 0.008925]
-V_max          = [0.0, 3.75, 0.0, 4.0]
+alpha_syn      = 2.0;  beta_deg = 0.5
+K_s            = [0.0061, 9.4e-4, 0.0543, 8.33]
+tau            = 1.32;  b = 170.0;  alfa_ads = 1.3e-9
 E_coli_cellDW  = 1.0e-12
 infection_time = 2.0
-K_mal          = 0.01
+K_mal          = 0.2
+p_pref         = [0.8925, 0.08925, 0.008925, 0.008925]
+V_max          = [7.24, 2.26, 0.0, 10.0]
 exchange_ids   = ["R_EX_glc__D_e", "R_EX_malt_e", "R_EX_glyc_e", "R_EX_ac_e"]
 essentials_ids = ["R_EX_o2_e","R_EX_nh4_e","R_EX_pi_e","R_EX_so4_e",
                   "R_EX_k_e","R_EX_mg2_e","R_EX_ca2_e","R_EX_cl_e",
                   "R_EX_fe2_e","R_EX_fe3_e","R_EX_mn2_e","R_EX_zn2_e",
                   "R_EX_cu2_e","R_EX_cobalt2_e","R_EX_mobd_e","R_EX_thi_e",
                   "R_EX_ni2_e","R_EX_sel_e","R_EX_slnt_e","R_EX_tungs_e"]
-all_ex_ids     = [id for id in keys(naiveModel.reactions) if startswith(id, "R_EX_")]
+all_ex_ids     = [id for id in keys(model.reactions) if startswith(id, "R_EX_")]
 MW_values      = [180.16, 342.3, 92.09, 60.05]
-h_release      = 6.0e-12
-duration       = 20.0
-mu_max_vector  = [1.33, 1.26, 1.10, 0.29]
+h_release      = 1.71e-12;  duration = 20.0 #zie document hoe ik h_release heb berekend, de oude waarde was 6.0e-12
+mu_max_vector  = [0.76, 0.76, 1.10, 0.30] #dit zijn ondertussen de echte waardes (limited medium)
 e_max_vector   = (alpha_syn .+ 0.001) ./ (beta_deg .+ mu_max_vector)
 
 naiveFba   = buildFbaCache(naiveModel,   exchange_ids, "R_BIOMASS_Ec_iJO1366_core_53p95M")
@@ -69,9 +69,9 @@ p = Parameters(
     0.0, zeros(4),
     0.0,                # q_benz_l
     0.0,                # q_phage_L
-    1e-10,              # k_attach
-    10.0,               # k_dettach
-    5.0,                # k_inject
+    7.92e-8,          # k_attach
+    6.48,           # k_dettach
+    3.02,            # k_inject
     K_mal,
     infection_time,
     1e8,                # infection_dose

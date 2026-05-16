@@ -11,7 +11,7 @@ include("./FBA.jl")
 
 function run(p::Parameters)
     u0        = zeros(16)
-    u0[Sind]  = [0.0, 2.337, 5.42, 0.0]
+    u0[Sind]  = [0.0, 2.337, 0.0, 0.0]
     u0[Eind]  = [0.95, 0.01, 0.01, 0.01]
     u0[Nind]  = p.startingBiomass
     tspan     = (0.0, p.duration)
@@ -46,8 +46,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision    = h(p, t - 20/60)
-    uLysis       = h(p, t - 60/60)
+    uDecision    = h(p, t - 28/79)
+    uLysis       = h(p, t - 79/79)
     X_tot        = getTotalBiomass(u, p)
     f_receptor   = getReceptorFactor(u, p)
     k_attach_eff = p.k_attach * f_receptor

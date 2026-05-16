@@ -27,10 +27,10 @@ naiveModel   = loadFBAmodel(model_path)
 lysogenModel = loadFBAmodel(model_path)   # Model 2: geen Benzonase in FBA
 
 alpha_syn      = 2.0;   beta_deg = 0.5
-K_s            = [0.0278, 0.0146, 0.0543, 0.0833]
-tau            = 1.0;   b = 170.0
+K_s            = [0.0061, 9.4e-4, 0.0543, 8.33]
+tau            = 1.32;  b = 170.0
 p_pref         = [0.8925, 0.08925, 0.008925, 0.008925]
-V_max          = [0.0, 3.75, 0.0, 4.0]
+V_max          = [0.0, 2.26, 0.0, 10.0]
 E_coli_cellDW  = 1.0e-12
 infection_time = 2.0
 K_mal          = 0.2
@@ -42,9 +42,9 @@ essentials_ids = ["R_EX_o2_e","R_EX_nh4_e","R_EX_pi_e","R_EX_so4_e",
                   "R_EX_ni2_e","R_EX_sel_e","R_EX_slnt_e","R_EX_tungs_e"]
 all_ex_ids     = [id for id in keys(naiveModel.reactions) if startswith(id, "R_EX_")]
 MW_values      = [180.16, 342.3, 92.09, 60.05]
-h_release      = 6.0e-12
+h_release      = 1.71e-12
 duration       = 20.0
-mu_max_vector  = [1.33, 1.26, 1.10, 0.29]
+mu_max_vector  = [0.76, 0.76, 1.10, 0.30]
 e_max_vector   = (alpha_syn .+ 0.001) ./ (beta_deg .+ mu_max_vector)
 
 naiveFba   = buildFbaCache(naiveModel,   exchange_ids, "R_BIOMASS_Ec_iJO1366_core_53p95M")
@@ -59,9 +59,9 @@ p = Parameters(
     0.0, zeros(4),
     0.0, zeros(4),
     0.0,
-    1e-10,          # k_attach
-    10.0,           # k_dettach
-    5.0,            # k_inject
+    7.92e-8,          # k_attach
+    6.48,           # k_dettach
+    3.02,            # k_inject
     K_mal,
     infection_time,
     1e8,            # infection_dose (MOI=0.1 * N0=1e9)

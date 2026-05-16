@@ -13,7 +13,7 @@ import SBMLFBCModels
 
 
 # ============================================================
-#  State vector: 16 elementen
+#  State vector: 17 elementen
 # ============================================================
 const Sind    = 1:4
 const Eind    = 5:8
@@ -25,6 +25,7 @@ const Pfind   = lind+1        # 13
 const Paind   = Pfind+1       # 14
 const MOIind  = Paind+1       # 15
 const Benzind = MOIind+1      # 16
+const Bind    = Benzind+1     # 17 — burst size uit lytische FBA
 
 const AVOGADRO = 6.022e23
 
@@ -272,6 +273,17 @@ function fbaUpdate!(u::Vector{Float64}, p::Parameters)
     else
         p.q_phage_L = 0.0
     end
+    # Sla de exacte burst size op in u[Bind] zodat het tijdsverloop
+    # direct uit sol.u gelezen kan worden
+    tau_eclipse = 28.0 / 79.0
+    tau_rise    = p.tau - tau_eclipse
+    b_fba_raw    = p.q_phage_L * p.E_coli_cellDW * tau_rise * (AVOGADRO * 1e-3)
+    # Normaliseer zodat b_fba bij maximale flux overeenkomt met b=170
+    b_fba_max_verwacht = 170.0
+    q_phage_typisch    = 1.7e-5   # typische maximale FBA flux
+    schaalfactor       = b_fba_max_verwacht / (q_phage_typisch * p.E_coli_cellDW * tau_rise * (AVOGADRO * 1e-3))
+    b_fba = max(1.0, b_fba_raw * schaalfactor)
+    u[Bind] = b_fba
 end
 
 function enforcePositiveDomain!(u)
@@ -279,10 +291,11 @@ function enforcePositiveDomain!(u)
 end
 
 function run(p::Parameters)
-    u0 = zeros(16)
+    u0 = zeros(17)
     u0[Sind] = [0.0, 2.337, 5.42, 0.0]
     u0[Eind] = [0.95, 0.01, 0.01, 0.01]
     u0[Nind] = p.startingBiomass
+    u0[Bind] = 1.0  # initiële burst size
     tspan = (0.0, p.duration)
 
     infectionCondition(u,t,integrator) = t == p.infection_time
@@ -310,13 +323,18 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision    = h(p, t - 20/60)
-    uLysis       = h(p, t - 60/60)
+    uDecision    = h(p, t - 28/79)
+    uLysis       = h(p, t - 79/79)
     X_tot        = getTotalBiomass(u, p)
     f_receptor   = getReceptorFactor(u, p)
     k_attach_eff = p.k_attach * f_receptor
     k_inject_eff = p.k_inject * f_receptor
-    b_fba = max(1.0, p.q_phage_L * p.E_coli_cellDW * p.tau * (AVOGADRO * 1e-3))
+    # Burst size berekening over de rise periode (= tau - eclipse periode)
+    # Eclipse periode = 20 min = 20/60 h: geen assemblage tijdens eclipse
+    # Rise periode = tau - tau_eclipse: actieve faagassemblage
+    tau_eclipse = 28.0 / 79.0   # 20 minuten in uren
+    tau_rise    = max(0.0, p.tau - tau_eclipse)
+    b_fba = max(1.0, p.q_phage_L * p.E_coli_cellDW * tau_rise * (AVOGADRO * 1e-3))
 
     du[Nind]  = p.mu_N * u[Nind] - k_inject_eff * u[Paind] * u[Nind] / X_tot
     du[Dind]  = k_inject_eff * u[Paind] * u[Nind] / X_tot

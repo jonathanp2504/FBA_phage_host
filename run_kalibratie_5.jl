@@ -7,4 +7,14 @@
 # ============================================================
 
 include("setup_model_5.jl")
+include("Model5.jl")
 include("calibrate_refs.jl")
+lys_max  = maximum([sol.u[i][Model5.lind]   for i in eachindex(sol.u)])
+benz_max = maximum([sol.u[i][Model5.Benzind] for i in eachindex(sol.u)])
+pn_max   = maximum([sol.u[i][Model5.Pfind] / max(sol.u[i][Model5.Nind], 1.0)
+                    for i in eachindex(sol.u)])
+
+println("Max lysogenen : ", lys_max)
+println("Max Benzonase : ", benz_max)
+println("Max P/N       : ", pn_max)
+

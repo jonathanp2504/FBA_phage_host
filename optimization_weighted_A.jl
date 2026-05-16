@@ -18,7 +18,7 @@ using SciMLBase
 # Referentiewaarden voor normalisatie
 # Pas deze aan na een eerste exploratieve run
 const BENZ_REF_A  = 2.0e-3   # typische max Benzonase [mmol/L]
-const PN_REF_A    = 6.0e12     # typische P/N eindverhouding [-]
+const PN_REF_A    = 3.0e9     # typische P/N eindverhouding [-]
 const FIXED_BIOMASSA = 1e9  # vaste beginbiomassa [cellen/L]
 const FIXED_MOI_A    = 2.0  # vaste MOI
 

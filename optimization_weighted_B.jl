@@ -16,7 +16,7 @@ using SciMLBase
 # ============================================================
 
 const BENZ_REF_B = 2e-3
-const PN_REF_B   = 6.0e12
+const PN_REF_B   = 3.0e9
 const FIXED_MOI_B = 2.0
 
 function evaluate_weighted_B(t_inf::Float64, biomass::Float64, p_base::Parameters)

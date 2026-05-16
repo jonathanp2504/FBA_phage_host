@@ -12,7 +12,7 @@ using SciMLBase
 # ============================================================
 
 const BENZ_REF_A  = 2.0e-3
-const PN_REF_A    = 6.0e12
+const PN_REF_A    = 1.06e12
 const FIXED_BIOMASSA = 1e9
 const FIXED_MOI_A    = 2.0
 
@@ -73,7 +73,7 @@ function evaluate_weighted_A(t_inf::Float64, moi::Float64,
         PN_ratio = final_N > 1.0 ? final_P / final_N : 1e12
         PN_norm  = PN_ratio / PN_REF_A
 
-        return 0.8 * benz_norm - 0.05 * PN_norm
+        return 0.8 * benz_norm - 0.2 * PN_norm
 
     catch e
         @warn "Simulatie gefaald t_inf=$t_inf, moi=$moi: $e"
@@ -156,6 +156,11 @@ function run_optimization_A(p_initial::Parameters)
         for t_inf in t_inf_values
             counter += 1
             score = evaluate_weighted_A(t_inf, moi, FIXED_BIOMASSA, p_initial)
+            # Sla scores van exact 0.0 over — geen productie/fagen, biologisch betekenisloos
+            if score == 0.0
+                println("  [$counter/$total] MOI=$moi | t_inf=$t_inf | score=0.0 (overgeslagen)")
+                continue
+            end
             println("  [$counter/$total] MOI=$moi | t_inf=$t_inf | score=$(round(score, digits=5))")
             if score > best_score
                 best_score = score
@@ -164,10 +169,22 @@ function run_optimization_A(p_initial::Parameters)
             end
         end
     end
+
+    # Als alle grid-punten nul of -Inf zijn
+    if best_score == -Inf
+        @warn "Alle grid-punten gaven score 0.0 of -Inf. Controleer kalibratie en parameters."
+        return (best_moi=moi_values[4], best_t_inf=t_inf_values[2],
+                best_biomass=FIXED_BIOMASSA, best_score=-Inf)
+    end
+
     println("\nBeste grid-punt: MOI=$best_moi | t_inf=$best_tinf | score=$best_score")
 
     println("\nNelder-Mead verfijning A...")
-    f_nm(x) = evaluate_weighted_A(x[1], x[2], FIXED_BIOMASSA, p_initial)
+    function f_nm(x)
+        score = evaluate_weighted_A(x[1], x[2], FIXED_BIOMASSA, p_initial)
+        # Behandel score 0.0 als -Inf voor Nelder-Mead
+        return score == 0.0 ? -Inf : score
+    end
 
     x0    = [best_tinf, best_moi]
     delta = [1.0, best_moi * 0.3 + 1e-4]

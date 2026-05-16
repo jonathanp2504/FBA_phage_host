@@ -22,7 +22,7 @@ const PHAGE_THRESHOLD = 100.0
 # ============================================================
 function run(p::Parameters)
     u0         = zeros(13)
-    u0[Sind]   = [4.44, 2.337, 5.42, 0.0]
+    u0[Sind]   = [4.44, 2.337, 0.0, 0.0]
     u0[Eind]   = [0.95, 0.01, 0.01, 0.01]
     u0[Sind_S] = p.startingBiomass
 

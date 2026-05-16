@@ -13,7 +13,7 @@ function run(p::Parameters)
     # INITIALISATIE
     # [Glc, Mal, Glyc, Ac, e_glc, e_mal, e_Glyc, e_ac, S, I, L, P, Benz] (subs in mmol/l)
     u0 = zeros(23)
-    u0[Sind] = [0.0, 2.337, 5.42, 0.0]#[4.44, 2.337, 5.42, 0.0]    # Subs
+    u0[Sind] = [0.0, 2.337, 0.0, 0.0]#[4.44, 2.337, 5.42, 0.0]    # Subs
     u0[Eind] = [0.95, 0.01, 0.01, 0.01]    # Enzymen
     u0[Nind]   = p.startingBiomass                         # S0 (alle cellen beginnen zonder fagen)
 
@@ -53,8 +53,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision = h(p, t - 20/60) #
-    uLysis = h(p, t - 60/60)
+    uDecision = h(p, t - 28/79) #
+    uLysis = h(p, t - 79/79)
     X_tot = getTotalBiomass(u, p)
     f_receptor = getReceptorFactor(u, p)
     # --- EFFECTIEVE RATIO'S ---

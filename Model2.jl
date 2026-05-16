@@ -244,7 +244,7 @@ function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
     du[Paind]  = k_attach_eff * X_tot * u[Pfind] - p.k_dettach * u[Paind] - k_inject_eff * u[Paind]
     du[Sind[1]] = p.h_release * p.k_inject * uLysis[Paind] * uLysis[Nind] / getTotalBiomass(uLysis, p)
     groeiverlies = p.mu_l - mu_eff_l
-    du[Benzind]  = groeiverlies * u[lind] * p.Y_benz
+    du[Benzind]  = groeiverlies * u[lind] * p.Y_benz * p.E_coli_cellDW
     return nothing
 end
 

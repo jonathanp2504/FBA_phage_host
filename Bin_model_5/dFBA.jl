@@ -10,7 +10,7 @@ include("./FBA.jl")
 
 function run(p::Parameters)
     u0        = zeros(16)
-    u0[Sind]  = [0.0, 2.337, 5.42, 0.0]
+    u0[Sind]  = [0.0, 2.337, 0.0, 0.0]
     u0[Eind]  = [0.95, 0.01, 0.01, 0.01]
     u0[Nind]  = p.startingBiomass
     tspan     = (0.0, p.duration)
@@ -45,8 +45,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision    = h(p, t - 20/60)
-    uLysis       = h(p, t - 60/60)
+    uDecision    = h(p, t - 28/79)
+    uLysis       = h(p, t - 79/79)
     X_tot        = getTotalBiomass(u, p)
     f_receptor   = getReceptorFactor(u, p)
     k_attach_eff = p.k_attach * f_receptor
@@ -58,7 +58,10 @@ function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
     # × tau [h] (latente periode)
     # × (AVOGADRO/1000) [partikels/mmol]
     # = faagpartikels per cel per latente periode
-    b_fba = max(1.0, p.q_phage_L * p.E_coli_cellDW * p.tau * (AVOGADRO * 1e-3))
+    tau_eclipse = 28.0 / 79.0   # 28 minuten in uren
+    tau_rise    = max(0.0, p.tau - tau_eclipse)
+    b_fba = max(1.0, p.q_phage_L * p.E_coli_cellDW * tau_rise * (AVOGADRO * 1e-3))
+ 
 
     du[Nind]  = p.mu_N * u[Nind]
     du[Nind] -= k_inject_eff * u[Paind] * u[Nind] / X_tot

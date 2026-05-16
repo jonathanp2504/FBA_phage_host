@@ -13,7 +13,7 @@ include("./FBA.jl")
 
 function run(p::Parameters)
     u0 = zeros(23)
-    u0[Sind] = [4.44, 2.337, 5.42, 0.0]   # glucose AAN in deze branch
+    u0[Sind] = [4.44, 2.337, 0.0, 0.0]   # glucose AAN in deze branch
     u0[Eind] = [0.95, 0.01, 0.01, 0.01]
     u0[Nind] = p.startingBiomass
 
@@ -50,8 +50,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision  = h(p, t - 20/60)
-    uLysis     = h(p, t - 60/60)
+    uDecision  = h(p, t - 28/79) # eclipse time = 28 mins, latent time = 51 mins, dus tau = 79 mins
+    uLysis     = h(p, t - 79/79)
     X_tot      = getTotalBiomass(u, p)
     f_receptor = getReceptorFactor(u, p)
 
@@ -89,7 +89,7 @@ function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
 
     # --- BENZONASE PRODUCTIE (buiten FBA, via groei-verlies methode) ---
     groeiverlies   = p.mu_l - mu_eff_l
-    productie_benz = groeiverlies * u[lind] * p.Y_benz
+    productie_benz = groeiverlies * u[lind] * p.Y_benz * p.E_coli_cellDW
     du[Benzind]    = productie_benz
 
     return nothing
