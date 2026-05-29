@@ -50,8 +50,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision  = h(p, t - 28/79) # eclipse time = 28 mins, latent time = 51 mins, dus tau = 79 mins
-    uLysis     = h(p, t - 79/79)
+    uDecision  = h(p, t - 28/60) # eclipse time = 28 mins, latent time = 51 mins, dus tau = 79 mins
+    uLysis     = h(p, t - 79/60)
     X_tot      = getTotalBiomass(u, p)
     f_receptor = getReceptorFactor(u, p)
 

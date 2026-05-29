@@ -13,30 +13,12 @@ using HiGHS
 #  Bevat:
 #   - bereken_benz_ref_fba(): correcte bovengrens via FBA
 #   - nelder_mead():          generieke Nelder-Mead optimizer
-#   - pareto_front():         Pareto-front over (Benzonase, P_max)
+#   - pareto_grid_scan():     originele versie (ongewijzigd)
+#   - pareto_grid_scan_fixed(): gecorrigeerde versie
 # ============================================================
 
 # ============================================================
 #  ANALYTISCHE BOVENGRENS BENZONASE VIA FBA
-#
-#  Berekent de maximale theoretische Benzonase-productie [mmol/L]
-#  via één enkele FBA-solve waarbij:
-#    - Biomassareactie = 0 (geen groei, alles naar Benzonase)
-#    - Substraatopname = V_max (volledige capaciteit)
-#    - Objective = maximaliseer R_BENZ_prod flux
-#
-#  Parameters:
-#    benz_model  : FBA-model met R_BENZ_prod al toegevoegd
-#                  (bv. lysogenModel3 na addBenzonase!)
-#    exchange_ids: vector van exchange reactie IDs
-#    V_max       : maximale opnamesnelheden [mmol/gDW/h]
-#    biomass_id  : ID van de biomassareactie
-#    benz_id     : ID van de Benzonase productiereactie
-#    rho_DW      : celdrooggewicht [gDW/cel]
-#    N0          : beginbiomassa [cellen/L]
-#    duration    : simulatieduur [h]
-#
-#  Retourneert: BENZ_REF [mmol/L]
 # ============================================================
 function bereken_benz_ref_fba(benz_model,
                                exchange_ids::Vector{String},
@@ -47,8 +29,6 @@ function bereken_benz_ref_fba(benz_model,
                                N0::Float64,
                                duration::Float64)
 
-    # Bouw een tijdelijke FBA-cache met Benzonase als objective
-    # Biomassareactie wordt op 0 gezet (geen groei)
     optimizer_ref = JuMP.Model(HiGHS.Optimizer)
     JuMP.set_silent(optimizer_ref)
 
@@ -62,7 +42,6 @@ function bereken_benz_ref_fba(benz_model,
             base_name   = rid)
     end
 
-    # Stoichiometrische balansen
     balances = Dict(mid => JuMP.AffExpr() for mid in keys(benz_model.metabolites))
     for (rid, rxn) in benz_model.reactions
         for (mid, coef) in rxn.stoichiometry
@@ -73,14 +52,12 @@ function bereken_benz_ref_fba(benz_model,
         JuMP.@constraint(optimizer_ref, bal == 0.0)
     end
 
-    # Substraatopname op V_max zetten (volledige capaciteit)
     for (i, eid) in enumerate(exchange_ids)
         if haskey(reaction_vars, eid)
             JuMP.set_lower_bound(reaction_vars[eid], -V_max[i])
         end
     end
 
-    # Objective: maximaliseer Benzonase-productie
     JuMP.@objective(optimizer_ref, Max, reaction_vars[benz_id])
     JuMP.optimize!(optimizer_ref)
 
@@ -89,9 +66,8 @@ function bereken_benz_ref_fba(benz_model,
         return 1.0
     end
 
-    # Flux in mmol/gDW/h → omzetten naar mmol/L over de volledige duratie
-    q_benz_max = JuMP.value(reaction_vars[benz_id])   # mmol/gDW/h
-    benz_ref   = q_benz_max * rho_DW * N0 * duration  # mmol/L
+    q_benz_max = JuMP.value(reaction_vars[benz_id])
+    benz_ref   = q_benz_max * rho_DW * N0 * duration
 
     println("  BENZ_REF (FBA, geen groei): $(round(benz_ref, sigdigits=4)) mmol/L")
     println("  q_benz_max = $(round(q_benz_max, sigdigits=4)) mmol/gDW/h | ",
@@ -101,8 +77,6 @@ end
 
 # ============================================================
 #  NELDER-MEAD SIMPLEX OPTIMIZER
-#  Maximaliseert f (retourneert hogere score = beter)
-#  Grenzen worden via clamping afgedwongen
 # ============================================================
 function nelder_mead(f, x0, delta, lb, ub;
                      max_iter=300, tol=1e-5,
@@ -163,88 +137,367 @@ function nelder_mead(f, x0, delta, lb, ub;
 end
 
 # ============================================================
-#  PARETO-FRONT GENERATOR
-#
-#  Varieert het gewicht w_benz van 0.05 → 0.95.
-#  Voor elk gewicht wordt één optimalisatierun gedraaid.
-#  Daarna worden gedomineerde punten gefilterd.
-#
-#  Een punt A wordt gedomineerd door B als:
-#    B.benz ≥ A.benz  EN  B.P_max ≤ A.P_max
-#    (met minstens één strikte ongelijkheid)
-#
-#  Parameters:
-#    run_single_opt : functie(w_benz::Float64) die een NamedTuple
-#                    retourneert met velden:
-#                      w, benz, P_max, t_inf, moi, N0, score
-#    n_weights      : aantal gewichtspunten (default 11)
-#    figname        : bestandsnaam voor de Pareto-plot
+#  ORIGINELE PARETO GRID SCAN (ongewijzigd)
 # ============================================================
-function pareto_front(run_single_opt::Function;
-                      n_weights::Int = 11,
-                      figname::String = "pareto_front.png")
+function pareto_grid_scan(p_initial, run_func::Function,
+                           Benzind, Pfind,
+                           moi_values, t_inf_values,
+                           maak_parameters::Function;
+                           figbase::String = "pareto_grid")
 
-    weights = range(0.05, stop=0.95, length=n_weights)
     results = []
+    total   = length(moi_values) * length(t_inf_values)
+    counter = 0
 
-    println("\n=== Pareto-front berekening ($n_weights gewichten) ===")
-    for (i, w) in enumerate(weights)
-        println("\n--- Pareto punt $i/$n_weights | w_benz=$(round(w, digits=2)) ---")
-        res = run_single_opt(w)
-        push!(results, res)
-        @printf("  → Benz=%.4f mmol/L | P_max=%.3e fagen/L | t_inf=%.2f h | MOI=%.4f | N0=%.2e\n",
-            res.benz, res.P_max, res.t_inf, res.moi, res.N0)
-    end
-
-    # Filter niet-gedomineerde (Pareto-optimale) punten
-    pareto_pts = filter(results) do pt_a
-        !any(results) do pt_b
-            pt_b.benz  >= pt_a.benz  &&
-            pt_b.P_max <= pt_a.P_max &&
-            (pt_b.benz > pt_a.benz || pt_b.P_max < pt_a.P_max)
+    println("\n=== Pareto grid scan ($total simulaties) ===")
+    for moi in moi_values
+        for t_inf in t_inf_values
+            counter += 1
+            p_test = maak_parameters(p_initial, moi, t_inf)
+            try
+                sol = redirect_stdout(devnull) do
+                    redirect_stderr(devnull) do
+                        run_func(p_test)
+                    end
+                end
+                !SciMLBase.successful_retcode(sol) && continue
+                max_benz     = maximum(sol[Benzind, :])
+                P_max        = maximum(sol[Pfind, :])
+                infectiedosis = moi * p_initial.startingBiomass
+                idx_95       = findfirst(sol[Benzind, :] .>= 0.95 * max_benz)
+                t_95         = isnothing(idx_95) ? p_initial.duration : sol.t[idx_95]
+                @printf("  [%3d/%d] MOI=%-6.3f | t_inf=%-5.1f | benz=%.4e | P_max=%.3e | t95=%.2f\n",
+                    counter, total, moi, t_inf, max_benz, P_max, t_95)
+                push!(results, (moi=moi, t_inf=t_inf, max_benz=max_benz,
+                                P_max=P_max, infectiedosis=infectiedosis, t_95=t_95))
+            catch e
+                @warn "Simulatie gefaald moi=$moi, t_inf=$t_inf: $e"
+            end
         end
     end
-    sort!(pareto_pts, by = x -> x.P_max)
 
-    println("\n=== Pareto-front: $(length(pareto_pts)) niet-gedomineerde punten ===")
-    println("  w_benz | Benzonase [mmol/L] | P_max [fagen/L] | t_inf [h] | MOI    | N0")
-    println("  -------|-------------------|-----------------|-----------|--------|----------")
-    for pt in pareto_pts
-        @printf("  %-6.2f | %-17.5f | %-15.3e | %-9.2f | %-6.4f | %.2e\n",
-            pt.w, pt.benz, pt.P_max, pt.t_inf, pt.moi, pt.N0)
+    valid = filter(r -> isfinite(r.max_benz) && r.max_benz > 0, results)
+
+    all_benz  = [r.max_benz      for r in valid]
+    all_dose  = [r.infectiedosis  for r in valid]
+    all_t95   = [r.t_95          for r in valid]
+    all_tinf  = [r.t_inf         for r in valid]
+    all_moi   = [r.moi           for r in valid]
+
+    function get_pareto_front(xs, ys, maximize_x, minimize_y)
+        pts = collect(zip(xs, ys, 1:length(xs)))
+        pareto = filter(pts) do (ax, ay, _)
+            !any(pts) do (bx, by, _)
+                (maximize_x ? bx >= ax : bx <= ax) &&
+                (minimize_y ? by <= ay : by >= ay) &&
+                ((maximize_x ? bx > ax : bx < ax) ||
+                 (minimize_y ? by < ay : by > ay))
+            end
+        end
+        sort(pareto, by = p -> p[1])
     end
 
-    # Plot alle gesimuleerde punten + Pareto-front
-    all_benz = [r.benz  for r in results]
-    all_pmax = [r.P_max for r in results]
-    par_benz = [p.benz  for p in pareto_pts]
-    par_pmax = [p.P_max for p in pareto_pts]
+    par1 = get_pareto_front(all_benz, all_dose, true, true)
+    px1  = [p[1] for p in par1]
+    py1  = [p[2] for p in par1]
 
-    fig = plot(all_benz, all_pmax,
-        seriestype=:scatter,
-        marker=:circle, markersize=5,
-        color=:lightgray, label="Alle simulaties",
-        xlabel="Max Benzonase [mmol L⁻¹]",
-        ylabel="Max vrije fagen [fagen L⁻¹]",
-        yscale=:log10,
-        legend=:topright,
-        bottom_margin=8Plots.mm, left_margin=10Plots.mm)
+    fig1 = scatter(all_benz, all_dose,
+        zcolor         = all_tinf,
+        marker         = :circle, markersize = 6,
+        colorbar_title = "t_inf [h]",
+        label          = "All simulations",
+        xlabel         = "Max Benzonase [mmol L⁻¹]",
+        ylabel         = "Infection dose [phages L⁻¹]",
+        legend         = :topright,
+        bottom_margin  = 8Plots.mm, left_margin = 10Plots.mm)
+    plot!(fig1, px1, py1, lw=2, color=:red, linestyle=:dash, label="Pareto front")
+    scatter!(fig1, px1, py1, marker=:star5, markersize=9, color=:red, label="Pareto points")
+    savefig(fig1, figbase * "_benz_vs_dosis.png")
 
-    plot!(fig, par_benz, par_pmax,
-        seriestype=:scatter,
-        marker=:star5, markersize=9,
-        color=:steelblue, label="Pareto-front")
-    plot!(fig, par_benz, par_pmax,
-        lw=2, color=:steelblue, linestyle=:dash, label="")
+    par2 = get_pareto_front(all_benz, all_t95, true, true)
+    px2  = [p[1] for p in par2]
+    py2  = [p[2] for p in par2]
 
-    # Annoteer Pareto-punten met gewicht
-    for pt in pareto_pts
-        annotate!(fig, pt.benz, pt.P_max * 1.5,
-            text("w=$(round(pt.w, digits=2))", 7, :steelblue, :center))
+    fig2 = scatter(all_benz, all_t95,
+        zcolor         = all_moi,
+        marker         = :circle, markersize = 6,
+        colorbar_title = "MOI",
+        label          = "All simulations",
+        xlabel         = "Max Benzonase [mmol L⁻¹]",
+        ylabel         = "t₉₅ [h]",
+        legend         = :topright,
+        bottom_margin  = 8Plots.mm, left_margin = 10Plots.mm)
+    plot!(fig2, px2, py2, lw=2, color=:red, linestyle=:dash, label="Pareto front")
+    scatter!(fig2, px2, py2, marker=:star5, markersize=9, color=:red, label="Pareto points")
+    savefig(fig2, figbase * "_benz_vs_t95.png")
+
+    return valid
+end
+
+# ============================================================
+#  GECORRIGEERDE PARETO GRID SCAN
+#
+#  Wijzigingen t.o.v. origineel:
+#   - Front 1: y-as = (t₉₅ - t_inf), de netto productietijd
+#              gemeten vanaf infectie → echte procesvariabele
+#   - Front 2: y-as = MOI (input als kostenmaatstaf),
+#              want minimale infectiedosis was de doelstelling
+#              in de optimizer, niet P_max
+#   - Geen kleurencode: punten in eenvoudige grijstint,
+#              de front-lijn en drie gelabelde punten
+#              dragen alle relevante informatie
+#   - Geen titels op de grafieken
+#   - Alle labels in het Engels
+#   - Drie representatieve punten aangeduid op elk front:
+#              A = maximale Benzonase (rechts op front)
+#              B = minimale y-waarde (links op front)
+#              C = compromispunt (midden van front)
+# ============================================================
+function pareto_grid_scan_fixed(
+        p_initial,
+        run_func::Function,
+        Benzind::Int,
+        Pfind::Int,
+        Nind::Int,
+        moi_values::Vector{Float64},
+        t_inf_values::Vector{Float64},
+        maak_parameters::Function;
+        figbase::String = "pareto_grid_fixed")
+
+    results = []
+    total   = length(moi_values) * length(t_inf_values)
+    counter = 0
+
+    println("\n=== Pareto grid scan ($total simulations) ===")
+    println("    Front 1: Max Benzonase  vs  (t₉₅ - t_inf)  [production vs net process time]")
+    println("    Front 2: Max Benzonase  vs  MOI             [production vs infection dose]")
+
+    for moi in moi_values
+        for t_inf in t_inf_values
+            counter += 1
+            p_test = maak_parameters(p_initial, moi, t_inf)
+            try
+                sol = redirect_stdout(devnull) do
+                    redirect_stderr(devnull) do
+                        run_func(p_test)
+                    end
+                end
+                !SciMLBase.successful_retcode(sol) && continue
+
+                B_ts     = sol[Benzind, :]
+                max_benz = maximum(B_ts)
+                max_benz < 1e-8 && continue
+
+                # Netto productietijd: tijd vanaf infectie tot 95% van max Benzonase
+                # Dit is een echte procesvariabele die geminimaliseerd wordt
+                idx_95      = findfirst(B_ts .>= 0.95 * max_benz)
+                t_95        = isnothing(idx_95) ? p_initial.duration : sol.t[idx_95]
+                dt_prod     = max(t_95 - t_inf, 0.0)
+
+                @printf("  [%3d/%d] MOI=%-6.3f | t_inf=%-4.1f | Benz=%.5f | dt_prod=%5.2f h\n",
+                    counter, total, moi, t_inf, max_benz, dt_prod)
+
+                push!(results, (
+                    moi      = moi,
+                    t_inf    = t_inf,
+                    max_benz = max_benz,
+                    dt_prod  = dt_prod,
+                ))
+            catch e
+                @warn "Simulation failed moi=$moi, t_inf=$t_inf: $e"
+            end
+        end
     end
 
-    savefig(fig, figname)
-    println("  Pareto-figuur opgeslagen: $figname")
+    isempty(results) && (@warn "No valid results!"; return results)
 
-    return pareto_pts
+    # ----------------------------------------------------------
+    #  Pareto-dominantie filter
+    #  Punt A domineert punt B als:
+    #    A.benz >= B.benz  (maximaliseren)
+    #    A.obj2 <= B.obj2  (minimaliseren)
+    #  met minstens één strikte ongelijkheid.
+    # ----------------------------------------------------------
+    function is_pareto(xs_max::Vector{Float64}, ys_min::Vector{Float64})
+        n = length(xs_max)
+        dominated = fill(false, n)
+        for i in 1:n
+            for j in 1:n
+                i == j && continue
+                if xs_max[j] >= xs_max[i] && ys_min[j] <= ys_min[i] &&
+                   (xs_max[j] > xs_max[i]  || ys_min[j] < ys_min[i])
+                    dominated[i] = true
+                    break
+                end
+            end
+        end
+        return .!dominated
+    end
+
+    all_benz    = [r.max_benz for r in results]
+    all_dtprod  = [r.dt_prod  for r in results]
+    all_moi     = [r.moi      for r in results]
+    all_tinf    = [r.t_inf    for r in results]
+
+    # ----------------------------------------------------------
+    #  Drie representatieve punten selecteren op een front
+    #  A = maximale Benzonase (rechts)
+    #  B = minimale y-waarde (links/onder)
+    #  C = compromispunt (midden van de front-indices)
+    # ----------------------------------------------------------
+    function select_three(mask, xs, ys)
+        idx   = findall(mask)
+        ord   = sortperm(xs[idx])
+        idx_s = idx[ord]
+        n     = length(idx_s)
+        A = idx_s[end]              # maximale Benzonase
+        B = idx_s[argmin(ys[idx_s])]# minimale y
+        C = idx_s[max(1, n ÷ 2)]   # midden
+        return A, B, C
+    end
+
+    # ----------------------------------------------------------
+    #  FIGUUR 1: Benzonase vs netto productietijd (t₉₅ - t_inf)
+    #
+    #  Trade-off: hogere Benzonase-productie vereist meer
+    #  lysogenen, die langer nodig hebben om op te bouwen.
+    #  Vroege infectie bij lage MOI geeft meer lysogenen maar
+    #  een langere netto productietijd. Hoge MOI geeft snelle
+    #  lysis maar een lager productieniveau.
+    # ----------------------------------------------------------
+    par1_mask = is_pareto(all_benz, all_dtprod)
+    par1_ord  = sortperm(all_benz[par1_mask])
+    par1_x    = all_benz[par1_mask][par1_ord]
+    par1_y    = all_dtprod[par1_mask][par1_ord]
+
+    A1, B1, C1 = select_three(par1_mask, all_benz, all_dtprod)
+
+    fig1 = scatter(all_benz, all_dtprod,
+        marker            = :circle,
+        markersize        = 5,
+        markercolor       = :gray60,
+        markerstrokewidth = 0,
+        label             = "All simulations",
+        xlabel            = "Max Benzonase [mmol L⁻¹]",
+        ylabel            = "t₉₅ - t_inf [h]",
+        legend            = :topright,
+        bottom_margin     = 8Plots.mm,
+        left_margin       = 10Plots.mm,
+        top_margin        = 6Plots.mm,
+        size              = (620, 500))
+
+    plot!(fig1, par1_x, par1_y,
+        lw        = 2.5,
+        color     = :red,
+        linestyle = :dash,
+        label     = "Pareto front")
+
+    scatter!(fig1, all_benz[par1_mask], all_dtprod[par1_mask],
+        marker            = :circle,
+        markersize        = 7,
+        markercolor       = :red,
+        markerstrokewidth = 0,
+        label             = "Pareto points")
+
+    # Drie punten annoteren
+    for (lbl, idx) in [("A", A1), ("B", B1), ("C", C1)]
+        scatter!(fig1, [all_benz[idx]], [all_dtprod[idx]],
+            marker      = :star5,
+            markersize  = 12,
+            markercolor = :darkred,
+            markerstrokewidth = 0.5,
+            label       = "")
+        annotate!(fig1, all_benz[idx], all_dtprod[idx] + 0.15,
+            text(lbl, 10, :darkred, :center))
+    end
+
+    savefig(fig1, figbase * "_benz_vs_dtprod.png")
+    println("\nFigure saved: $(figbase)_benz_vs_dtprod.png")
+
+    # ----------------------------------------------------------
+    #  FIGUUR 2: Benzonase vs MOI
+    #
+    #  Trade-off: hogere MOI leidt tot meer directe infecties
+    #  en potentieel meer Benzonase via lytische route, maar
+    #  de infectiedosis is een directe procesinput die minimaal
+    #  gehouden moet worden (kosten, faagreiniging).
+    # ----------------------------------------------------------
+    par2_mask = is_pareto(all_benz, all_moi)
+    par2_ord  = sortperm(all_benz[par2_mask])
+    par2_x    = all_benz[par2_mask][par2_ord]
+    par2_y    = all_moi[par2_mask][par2_ord]
+
+    A2, B2, C2 = select_three(par2_mask, all_benz, all_moi)
+
+    fig2 = scatter(all_benz, all_moi,
+        marker            = :circle,
+        markersize        = 5,
+        markercolor       = :gray60,
+        markerstrokewidth = 0,
+        label             = "All simulations",
+        xlabel            = "Max Benzonase [mmol L⁻¹]",
+        ylabel            = "MOI [-]",
+        legend            = :topright,
+        bottom_margin     = 8Plots.mm,
+        left_margin       = 10Plots.mm,
+        top_margin        = 6Plots.mm,
+        size              = (620, 500))
+
+    plot!(fig2, par2_x, par2_y,
+        lw        = 2.5,
+        color     = :red,
+        linestyle = :dash,
+        label     = "Pareto front")
+
+    scatter!(fig2, all_benz[par2_mask], all_moi[par2_mask],
+        marker            = :circle,
+        markersize        = 7,
+        markercolor       = :red,
+        markerstrokewidth = 0,
+        label             = "Pareto points")
+
+    for (lbl, idx) in [("A", A2), ("B", B2), ("C", C2)]
+        scatter!(fig2, [all_benz[idx]], [all_moi[idx]],
+            marker      = :star5,
+            markersize  = 12,
+            markercolor = :darkred,
+            markerstrokewidth = 0.5,
+            label       = "")
+        annotate!(fig2, all_benz[idx], all_moi[idx] * 1.08,
+            text(lbl, 10, :darkred, :center))
+    end
+
+    savefig(fig2, figbase * "_benz_vs_moi.png")
+    println("Figure saved: $(figbase)_benz_vs_moi.png")
+
+    # ----------------------------------------------------------
+    #  Gecombineerde figuur
+    # ----------------------------------------------------------
+    fig_combined = plot(fig1, fig2,
+        layout = (1, 2),
+        size   = (1250, 500),
+        margin = 8Plots.mm)
+    savefig(fig_combined, figbase * "_combined.png")
+    println("Figure saved: $(figbase)_combined.png")
+
+    # ----------------------------------------------------------
+    #  Tekstueel overzicht van de drie punten per front
+    # ----------------------------------------------------------
+    println("\n=== Pareto points: Benzonase vs net process time ===")
+    println("  Label | MOI       | t_inf [h] | Benzonase [mmol/L] | dt_prod [h]")
+    for (lbl, idx) in [("A", A1), ("C", C1), ("B", B1)]
+        @printf("  %-5s | %-9.4f | %-9.1f | %-18.5f | %.2f\n",
+            lbl, results[idx].moi, results[idx].t_inf,
+            results[idx].max_benz, results[idx].dt_prod)
+    end
+
+    println("\n=== Pareto points: Benzonase vs MOI ===")
+    println("  Label | MOI       | t_inf [h] | Benzonase [mmol/L]")
+    for (lbl, idx) in [("A", A2), ("C", C2), ("B", B2)]
+        @printf("  %-5s | %-9.4f | %-9.1f | %.5f\n",
+            lbl, results[idx].moi, results[idx].t_inf,
+            results[idx].max_benz)
+    end
+
+    return results
 end

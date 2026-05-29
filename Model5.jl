@@ -92,7 +92,7 @@ function getTotalBiomass(u, p::Parameters)
     return u[Nind] + u[Dind] + u[Lind] + u[lind]
 end
 function getReceptorFactor(u, p::Parameters)
-    return (u[Eind[2]] + 1e-4) / p.e_max[2]
+    return u[Eind[2]]/ p.e_max[2]
 end
 function getMonod(s::Vector{Float64}, p::Parameters)::Vector{Float64}
     return [max(0.0, s[i]/(s[i]+p.K_s[i])) for i in eachindex(s)]
@@ -275,7 +275,7 @@ function fbaUpdate!(u::Vector{Float64}, p::Parameters)
     end
     # Sla de exacte burst size op in u[Bind] zodat het tijdsverloop
     # direct uit sol.u gelezen kan worden
-    tau_eclipse = 28.0 / 79.0
+    tau_eclipse = 28.0 / 60.0
     tau_rise    = p.tau - tau_eclipse
     b_fba_raw    = p.q_phage_L * p.E_coli_cellDW * tau_rise * (AVOGADRO * 1e-3)
     # Normaliseer zodat b_fba bij maximale flux overeenkomt met b=170
@@ -323,8 +323,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision    = h(p, t - 28/79)
-    uLysis       = h(p, t - 79/79)
+    uDecision    = h(p, t - 28/60)
+    uLysis       = h(p, t - 79/60)
     X_tot        = getTotalBiomass(u, p)
     f_receptor   = getReceptorFactor(u, p)
     k_attach_eff = p.k_attach * f_receptor
@@ -332,7 +332,7 @@ function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
     # Burst size berekening over de rise periode (= tau - eclipse periode)
     # Eclipse periode = 20 min = 20/60 h: geen assemblage tijdens eclipse
     # Rise periode = tau - tau_eclipse: actieve faagassemblage
-    tau_eclipse = 28.0 / 79.0   # 20 minuten in uren
+    tau_eclipse = 28.0 / 60.0   # 20 minuten in uren
     tau_rise    = max(0.0, p.tau - tau_eclipse)
     b_fba = max(1.0, p.q_phage_L * p.E_coli_cellDW * tau_rise * (AVOGADRO * 1e-3))
 

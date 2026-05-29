@@ -93,7 +93,7 @@ end
 
 function getReceptorFactor(u, p::Parameters)
     e_mal = u[Eind[2]]; e_mal_max = p.e_max[2]
-    return (e_mal + 1e-4) / e_mal_max
+    return e_mal/ e_mal_max
 end
 
 function getMonod(substrates::Vector{Float64}, p::Parameters)::Vector{Float64}
@@ -221,8 +221,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision = h(p, t - 20/60)
-    uLysis    = h(p, t - 60/60)
+    uDecision = h(p, t - 28/60)
+    uLysis    = h(p, t - 79/60)
     X_tot     = getTotalBiomass(u, p)
     f_receptor = getReceptorFactor(u, p)
     k_attach_eff = p.k_attach * f_receptor

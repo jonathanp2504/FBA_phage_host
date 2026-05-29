@@ -9,17 +9,9 @@ using UnPack
 include("./parameters.jl")
 include("./FBA.jl")
 
-# Fysische detectielimiet: onder dit aantal deeltjes/L -> exact nul
-const CELL_THRESHOLD  = 100.0   # onder 100 cellen/L -> biologisch irrelevant
+const CELL_THRESHOLD  = 100.0
 const PHAGE_THRESHOLD = 100.0
 
-# ============================================================
-#  run() — state vector heeft 13 elementen
-#  MOI zit NIET in de toestandsvector.
-#  Bereken post-hoc in de main als:
-#    MOI = [min(sol.u[i][Pfind] / max(sol.u[i][Sind_S], 1.0), 10.0)
-#           for i in eachindex(sol.u)]
-# ============================================================
 function run(p::Parameters)
     u0         = zeros(13)
     u0[Sind]   = [4.44, 2.337, 0.0, 0.0]
@@ -35,7 +27,6 @@ function run(p::Parameters)
     fbaUpdateTimepoints                  = collect(0:1/60:p.duration)
     fbaUpdateCondition(u, t, integrator) = t in fbaUpdateTimepoints
 
-    # FBA update + harde celdrempel elke minuut
     function fbaAffect!(integrator)
         fbaUpdate!(integrator.u, p)
         enforceThreshold!(integrator.u)
@@ -52,23 +43,14 @@ function run(p::Parameters)
         verbose  = false,
         reltol   = 1e-4,
         abstol   = 1e-6,
-        tstops   = [p.infection_time; fbaUpdateTimepoints],
+        tstops = [p.infection_time;
+          p.infection_time + (28/60);
+          p.infection_time + p.tau;
+          fbaUpdateTimepoints],
         callback = CallbackSet(domainCallBack, infectionCallBack, fbaCallBack))
     return solution
 end
 
-# ============================================================
-#  ODE rechterkant
-#
-#  Fix 1: Populatievergelijkingen beschermd met celdrempel —
-#          cellen onder CELL_THRESHOLD dragen niet bij.
-#
-#  Fix 2: prob_lys gebaseerd op vertraagde MOI (tau uur geleden)
-#          — beslissing wordt genomen bij infectie, niet bij lysis.
-#
-#  Fix 3: lysis_term enkel actief als er tau uur geleden ook
-#          echt vatbare cellen en fagen waren.
-# ============================================================
 function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
     S_subs = u[Sind]
     e_enz  = u[Eind]
@@ -80,19 +62,25 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
     R     = getRate(f, p)
     u_cyt = getU_cyt(R, p)
 
-    # Vertraagde toestand tau uur geleden
-    u_tau = h(p, t - p.tau)
+    # Twee aparte vertraagde toestanden
+    # En in simulate_dFBA! gebruik:
+    tau_d = 28.0 / 60.0   # altijd vast op 28 minuten, biologische constante
+    tau_l = p.tau          # varieert in sensitivity analyse  # 28 minuten in
 
-    # FIX 3: lysis_term alleen als er tau uur geleden echte infectie was
-    # (S_tau > drempel en P_tau > drempel, anders geen lysis)
-    S_tau = u_tau[Sind_S]
-    P_tau = u_tau[Pfind]
-    lysis_term = (t > p.tau && S_tau > CELL_THRESHOLD && P_tau > PHAGE_THRESHOLD) ?
-        getNewInfectionFlux(u_tau, p) : 0.0
+    u_decision = h(p, t - tau_d)
+    u_lysis    = h(p, t - tau_l)
 
-    # FIX 2: prob_lys op basis van MOI tau uur geleden (infectietijdstip)
-    phi_beslissing = (t > p.tau && S_tau > CELL_THRESHOLD) ?
-        getPhi(u_tau, p) : 0.0
+    # Lysis term: gebaseerd op infectieflux van TAU_L geleden
+    S_lysis = u_lysis[Sind_S]
+    P_lysis = u_lysis[Pfind]
+    # Door:
+    lysis_term = (t > p.infection_time + tau_l && S_lysis > CELL_THRESHOLD && P_lysis > PHAGE_THRESHOLD) ?
+        getNewInfectionFlux(u_lysis, p) : 0.0
+
+    # Beslissing: gebaseerd op MOI van TAU_D geleden (moment van infectie)
+    S_decision = u_decision[Sind_S]
+    phi_beslissing = (t > p.infection_time + tau_d && S_decision > CELL_THRESHOLD) ?
+        getPhi(u_decision, p) : 0.0
     prob_lys = getProbLys(phi_beslissing)
 
     X_tot            = getTotalBiomass(u, p)
@@ -102,10 +90,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
     mu_safe  = max(0.0, p.mu)
     mu_eff_l = mu_safe * (1.0 - p.f_prod)
 
-    # --- Benzonase productie ---
     productie_benz = (mu_safe - mu_eff_l) * L_cell * p.Y_benz
 
-    # --- Substraten & enzymen ---
     for i in eachindex(Sind)
         sub_idx = Sind[i]
         enz_idx = Eind[i]
@@ -120,8 +106,6 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
             (p.beta_deg + mu_avg) * e_enz[i] + 0.001
     end
 
-    # --- Populatiedynamica ---
-    # FIX 1: cellen onder drempel -> geen groei of infectie
     S_actief = S_cell > CELL_THRESHOLD ? S_cell : 0.0
     L_actief = L_cell > CELL_THRESHOLD ? L_cell : 0.0
 
@@ -134,20 +118,12 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
     return nothing
 end
 
-# ============================================================
-#  enforcePositiveDomain! — bij negatieve waarden (domainCallback)
-# ============================================================
 function enforcePositiveDomain!(u)
     for i in eachindex(u)
         u[i] = max(0.0, u[i])
     end
 end
 
-# ============================================================
-#  enforceThreshold! — wordt elke minuut aangeroepen via fbaAffect!
-#  Zet deeltjes onder fysische detectielimiet op exact nul.
-#  Dit voorkomt dat de solver blijft integreren op fantoomwaarden.
-# ============================================================
 function enforceThreshold!(u)
     if u[Sind_S] < CELL_THRESHOLD   u[Sind_S] = 0.0 end
     if u[Sind_I] < CELL_THRESHOLD   u[Sind_I] = 0.0 end

@@ -50,15 +50,10 @@ p_initial = Model4.Parameters(duration, 1e9, alpha_syn, beta_deg, K_s, V_max, p_
     mu_max_vector, e_max_vector, 0.0015)
 
 println("=== BENZ_REF berekening voor Model 4 ===")
-setup_optimizer_A(lysogenModel4, exchange_ids, V_max,
-                  "R_BIOMASS_Ec_iJO1366_core_53p95M", "R_BENZ_prod",
-                  E_coli_cellDW, duration)
-BENZ_REF_B[] = BENZ_REF_A[]
-
 println("\n" * "="^60)
 println("OPTIMIZER A — MODEL 4")
 println("="^60)
-res_A = run_optimization_A(p_initial)
+res_A = run_optimization_A(p_initial; w_benz=0.8, w_P=0.2)
 println("\nResultaat A: MOI=$(round(res_A.best_moi,digits=4)) | ",
         "t_inf=$(round(res_A.best_t_inf,digits=2)) h | ",
         "score=$(round(res_A.best_score,digits=6))")
@@ -66,13 +61,7 @@ println("\nResultaat A: MOI=$(round(res_A.best_moi,digits=4)) | ",
 println("\n" * "="^60)
 println("OPTIMIZER B — MODEL 4")
 println("="^60)
-res_B = run_optimization_B(p_initial)
+res_B = run_optimization_B(p_initial; w_benz=0.8, w_P=0.2)
 println("\nResultaat B: t_inf=$(round(res_B.best_t_inf,digits=2)) h | ",
         "N0=$(round(res_B.best_N0,sigdigits=3)) cellen/L | ",
         "score=$(round(res_B.best_score,digits=6))")
-
-println("\n" * "="^60)
-println("PARETO-FRONT — MODEL 4")
-println("="^60)
-pareto_A = run_pareto_A(p_initial; n_weights=11, figname="pareto_A_M4.png")
-pareto_B = run_pareto_B(p_initial; n_weights=11, figname="pareto_B_M4.png")

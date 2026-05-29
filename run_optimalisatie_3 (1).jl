@@ -3,10 +3,11 @@
 #  Optimizer A: vaste biomassa (1e9), optimaliseert MOI + t_inf
 #  Optimizer B: vaste MOI (2.0), optimaliseert t_inf + biomassa
 # ============================================================
+include("Model2.jl")
 include("Model3.jl")
 include("optimizer_utils.jl")
 include("run_optimalisatie_A_M23.jl")
-include("run_optimalisatie_B_M23.jl")
+
 
 using Plots, Printf, JuMP, HiGHS
 using COBREXA, AbstractFBCModels
@@ -37,6 +38,20 @@ naiveFba3     = Model3.buildFbaCache(naiveModel3, exchange_ids,
                     "R_BIOMASS_Ec_iJO1366_core_53p95M")
 lysogenFba3   = Model3.buildFbaCache(lysogenModel3, exchange_ids,
                     "R_BIOMASS_Ec_iJO1366_core_53p95M"; benz_id="R_BENZ_prod")
+function maak_params_M3(p_base, moi, t_inf)
+    infectiedosis = moi * p_base.startingBiomass
+    return Model3.Parameters(
+        p_base.duration, p_base.startingBiomass,
+        p_base.alpha_syn, p_base.beta_deg, p_base.K_s, p_base.V_max, p_base.p_pref,
+        p_base.tau, p_base.b, p_base.E_coli_cellDW, p_base.MW, p_base.h_release,
+        p_base.biomass_id, p_base.ex_ids, p_base.all_exchanges, p_base.essentials,
+        p_base.fbaModelNaive, p_base.fbaModelLysogen,
+        p_base.mu_N, copy(p_base.q_N), p_base.mu_l, copy(p_base.q_l), p_base.q_benz_l,
+        p_base.k_attach, p_base.k_dettach, p_base.k_inject, p_base.K_mal,
+        t_inf, infectiedosis,
+        p_base.benz_id, p_base.k_tox, p_base.beta_benz, p_base.q_benz,
+        copy(p_base.mu_max), copy(p_base.e_max), p_base.f_prod)
+end
 
 p_initial = Model3.Parameters(duration, 1e9, alpha_syn, beta_deg, K_s, V_max, p_pref,
     tau, b, 1e-12, MW_values, h_release,
@@ -51,29 +66,25 @@ p_initial = Model3.Parameters(duration, 1e9, alpha_syn, beta_deg, K_s, V_max, p_
 # BENZ_REF: lysogenModel3 heeft Benzonase al toegevoegd
 # biomassareactie wordt intern op 0 gezet door bereken_benz_ref_fba
 println("=== BENZ_REF berekening voor Model 3 ===")
-setup_optimizer_A(lysogenModel3, exchange_ids, V_max,
-                  "R_BIOMASS_Ec_iJO1366_core_53p95M", "R_BENZ_prod",
-                  E_coli_cellDW, duration)
-BENZ_REF_B[] = BENZ_REF_A[]
 
 println("\n" * "="^60)
 println("OPTIMIZER A — MODEL 3")
 println("="^60)
-res_A = run_optimization_A(p_initial)
+res_A = run_optimization_A(p_initial; w_benz=10.0, w_P=0.1, w_t=0.1)
 println("\nResultaat A: MOI=$(round(res_A.best_moi,digits=4)) | ",
         "t_inf=$(round(res_A.best_t_inf,digits=2)) h | ",
         "score=$(round(res_A.best_score,digits=6))")
 
-println("\n" * "="^60)
-println("OPTIMIZER B — MODEL 3")
-println("="^60)
-res_B = run_optimization_B(p_initial)
-println("\nResultaat B: t_inf=$(round(res_B.best_t_inf,digits=2)) h | ",
-        "N0=$(round(res_B.best_N0,sigdigits=3)) cellen/L | ",
-        "score=$(round(res_B.best_score,digits=6))")
 
 println("\n" * "="^60)
-println("PARETO-FRONT — MODEL 3")
+println("PARETO GRID SCAN — MODEL 3")
 println("="^60)
-pareto_A = run_pareto_A(p_initial; n_weights=11, figname="pareto_A_M3.png")
-pareto_B = run_pareto_B(p_initial; n_weights=11, figname="pareto_B_M3.png")
+# DOOR dit:
+moi_values   = [0.001, 0.005, 0.01, 0.05, 0.1, 0.3,
+                0.5, 1.0, 2.0, 3.0, 5.0]
+t_inf_values = [0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0]
+pareto_grid = pareto_grid_scan_fixed(
+    p_initial, Model3.run,
+    Model3.Benzind, Model3.Pfind, Model3.Nind,
+    moi_values, t_inf_values,
+    maak_params_M3; figbase="pareto_M3_fixed")

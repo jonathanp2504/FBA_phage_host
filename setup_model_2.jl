@@ -66,7 +66,7 @@ p = Parameters(
     infection_time,
     1e8,            # infection_dose (MOI=0.1 * N0=1e9)
     "R_BENZ_prod",
-    0.05,           # k_tox
+    0.35,           # k_tox
     0.1,            # beta_benz
     0.0,            # q_benz
     mu_max_vector,

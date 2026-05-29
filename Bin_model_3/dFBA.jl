@@ -53,8 +53,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision = h(p, t - 28/79) #
-    uLysis = h(p, t - 79/79)
+    uDecision = h(p, t - 28/60) #
+    uLysis = h(p, t - 79/60)
     X_tot = getTotalBiomass(u, p)
     f_receptor = getReceptorFactor(u, p)
     # --- EFFECTIEVE RATIO'S ---

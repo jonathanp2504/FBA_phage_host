@@ -45,8 +45,8 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision    = h(p, t - 28/79)
-    uLysis       = h(p, t - 79/79)
+    uDecision    = h(p, t - 28/60)
+    uLysis       = h(p, t - 79/60)
     X_tot        = getTotalBiomass(u, p)
     f_receptor   = getReceptorFactor(u, p)
     k_attach_eff = p.k_attach * f_receptor
@@ -58,7 +58,7 @@ function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
     # × tau [h] (latente periode)
     # × (AVOGADRO/1000) [partikels/mmol]
     # = faagpartikels per cel per latente periode
-    tau_eclipse = 28.0 / 79.0   # 28 minuten in uren
+    tau_eclipse = 28.0 / 60.0   # 28 minuten in uren
     tau_rise    = max(0.0, p.tau - tau_eclipse)
     b_fba = max(1.0, p.q_phage_L * p.E_coli_cellDW * tau_rise * (AVOGADRO * 1e-3))
  

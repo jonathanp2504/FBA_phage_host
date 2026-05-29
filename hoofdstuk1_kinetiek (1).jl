@@ -21,7 +21,7 @@ model      = loadFBAmodel(model_path)
 
 alpha_syn      = 2.0;  beta_deg = 0.5
 K_s            = [0.0061, 9.4e-4, 0.0543, 8.33]
-tau            = 1.32;  b = 170.0
+tau            = 79/60;  b = 170.0   # tau consistent met TAU_L = 79/60
 p_pref         = [0.8925, 0.08925, 0.008925, 0.008925]
 V_max          = [7.24, 2.26, 0.0, 10.0]
 exchange_ids   = ["R_EX_glc__D_e", "R_EX_malt_e", "R_EX_glyc_e", "R_EX_ac_e"]
@@ -48,9 +48,9 @@ function make_p1(N0, t_inf, moi; tau_=tau, alfa_=alfa_ads, vmax_=V_max)
 end
 
 # ============================================================
-#  1a. Één-stap groeicurve validatie (lage MOI = lytisch regime)
+#  1a. Growth curve validation (lage MOI = lytisch regime)
 # ============================================================
-println("=== 1a: Groeicurve validatie ===")
+println("=== 1a: Growth curve validation ===")
 p_ref = make_p1(1e9, 2.0, 0.001)
 sol   = run(p_ref)
 
@@ -59,43 +59,90 @@ S   = [sol.u[i][Sind_S] for i in eachindex(sol.u)]
 I   = [sol.u[i][Sind_I] for i in eachindex(sol.u)]
 L   = [sol.u[i][Sind_L] for i in eachindex(sol.u)]
 P   = [sol.u[i][Pfind]  for i in eachindex(sol.u)]
-MOI = [min(sol.u[i][Pfind] / max(sol.u[i][Sind_S], 1.0), 10.0)
-       for i in eachindex(sol.u)]
+MOI_raw = [begin
+    s     = sol.u[i][Sind_S]
+    p_val = sol.u[i][Pfind]
+    (s > CELL_THRESHOLD && p_val > PHAGE_THRESHOLD) ?
+        min(p_val / s, 10.0) : NaN
+end for i in eachindex(sol.u)]
+
+MOI = copy(MOI_raw)
+last_valid = isnan(MOI_raw[1]) ? 0.0 : MOI_raw[1]
+for i in eachindex(MOI_raw)
+    if !isnan(MOI_raw[i])
+        last_valid = MOI_raw[i]
+    else
+        MOI[i] = last_valid
+    end
+end
 X   = S .+ I .+ L
 
 i_max_I = argmax(I)
 t_lysis = t[i_max_I]
-println("  Lysis-piek bij t = $(round(t_lysis,digits=2)) h (verwacht ≈ $(2.0+tau) h)")
+println("  Lysis peak at t = $(round(t_lysis,digits=2)) h (expected ≈ $(2.0 + 1.32) h)")
 
-pa = plot(t, [S I L X],
-    label=["Vatbaar S" "Lytisch I" "Lysogeen L" "Totaal X"],
-    color=[:blue :red :green :black], lw=2,
-    yscale=:log10, ylims=(1,:auto),
-    xlabel="t [h]", ylabel="Cellen L⁻¹",
+# Verwijder size uit de individuele subplots pa, pb, pc_moi
+# en zet alleen size op de gecombineerde figuur
+
+# Fix: gebruik gr() expliciet en zet dpi
+gr()
+
+S_plot  = max.(S, 1.0)
+I_plot  = max.(I, 1.0)
+L_plot  = max.(L, 1.0)
+X_plot  = max.(X, 1.0)
+P_plot  = max.(P, 1.0)
+MOI_plot = max.(MOI .+ 1e-6, 1e-6)
+
+pa = plot(t, S_plot,  label="Susceptible S",  color=:blue,  lw=2)
+plot!(pa, t, I_plot,  label="Lytic I",        color=:red,   lw=2)
+plot!(pa, t, L_plot,  label="Lysogenic L",    color=:green, lw=2)
+plot!(pa, t, X_plot,  label="Total X",        color=:black, lw=2)
+plot!(pa,
+    yscale=:log10,
+    ylims=(10.0, 1e12),
+    xlabel="t [h]", ylabel="Cells L⁻¹",
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
     legend=:bottomleft,
     bottom_margin=5Plots.mm, left_margin=8Plots.mm)
-pb = plot(t, max.(P, 1.0), label="Vrije fagen P", color=:darkred, lw=2,
-    yscale=:log10, ylims=(1,:auto),
-    xlabel="t [h]", ylabel="Fagen L⁻¹",
-    legend=:topleft,
-    bottom_margin=5Plots.mm, left_margin=8Plots.mm)
-pc_moi = plot(t, MOI .+ 1e-6, label="MOI", color=:purple, lw=2,
+
+pb = plot(t, P_plot, label="Free phages P", color=:darkred, lw=2)
+plot!(pb,
     yscale=:log10,
-    xlabel="t [h]", ylabel="MOI [-]",
+    ylims=(10.0, 1e13),
+    xlabel="t [h]", ylabel="Phages L⁻¹",
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
     legend=:topleft,
     bottom_margin=5Plots.mm, left_margin=8Plots.mm)
-fig1a = plot(pa, pb, pc_moi, layout=(1,3), size=(1200,400),
-    margin=6Plots.mm)
+
+pc_moi = plot(t, MOI_plot, label="MOI", color=:purple, lw=2)
+plot!(pc_moi,
+    yscale=:log10,
+    ylims=(1e-6, 20.0),
+    xlabel="t [h]", ylabel="MOI [-]",
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
+    legend=:topleft,
+    bottom_margin=5Plots.mm, left_margin=8Plots.mm)
+
+fig1a = plot(pa, pb, pc_moi,
+    layout=(1,3),
+    size=(1500, 500),
+    left_margin=2Plots.mm,
+    bottom_margin=2Plots.mm,
+    top_margin=2Plots.mm,
+    right_margin=2Plots.mm)
 savefig(fig1a, "h1a_groeicurve_validatie.png")
-println("  Figuur opgeslagen: h1a_groeicurve_validatie.png")
+println("  Figure saved: h1a_groeicurve_validatie.png")
+
 
 # ============================================================
-#  1c. Gevoeligheidsanalyse: alfa_ads en tau
+#  1c. Sensitivity analysis: alfa_ads and tau
 # ============================================================
-println("\n=== 1c: Gevoeligheidsanalyse ===")
+println("\n=== 1c: Sensitivity analysis ===")
 
 alfa_waarden = [1e-11, 1e-10, 5e-10, 1e-9]
-tau_waarden  = [0.5, 1.0, 1.5, 2.0]
+# tau sensitivity: varieer TAU_L via p.tau, TAU_D schaalt mee als 28/79 * tau_
+tau_waarden  = [0.5, 1.0, 79/60, 2.0]
 
 max_P_alfa = Float64[]
 for alfa in alfa_waarden
@@ -110,46 +157,59 @@ for tau_ in tau_waarden
     sol_t = run(make_p1(1e9, 2.0, 0.001; tau_=tau_))
     if SciMLBase.successful_retcode(sol_t)
         I_t = [sol_t.u[i][Sind_I] for i in eachindex(sol_t.u)]
-        push!(t_piek_tau, sol_t.t[argmax(I_t)])
+        t_t = sol_t.t
+        idx = argmax(I_t)
+        println("  tau=$(round(tau_, digits=3)) h:")
+        println("    max I     = $(maximum(I_t))")
+        println("    argmax I  = $idx")
+        println("    t_piek    = $(t_t[idx])")
+        push!(t_piek_tau, t_t[idx])
     else
+        println("  tau=$(round(tau_, digits=3)) h: SOLVER FAILED")
         push!(t_piek_tau, NaN)
     end
-    println("  tau=$(tau_) h: lysis-piek bij t=$(round(t_piek_tau[end],digits=2)) h")
 end
 
-pf = bar(string.(alfa_waarden), max_P_alfa,
-    xlabel="α_ads [L cel⁻¹ h⁻¹]", ylabel="Max fagen L⁻¹",
-    color=:steelblue, legend=false,
-    bottom_margin=8Plots.mm, left_margin=8Plots.mm)
-pg = bar(string.(tau_waarden), t_piek_tau,
-    xlabel="τ [h]", ylabel="t_piek [h]",
-    color=:darkorange, legend=false,
-    bottom_margin=8Plots.mm, left_margin=8Plots.mm)
-fig1c = plot(pf, pg, layout=(1,2), size=(900,400), margin=6Plots.mm)
+pf = plot(alfa_waarden, max_P_alfa,
+    xlabel="α_ads [L cell⁻¹ h⁻¹]", ylabel="Max phages L⁻¹",
+    xscale=:log10,
+    color=:steelblue, lw=2, marker=:circle, markersize=7, legend=false,
+    tickfontsize=11, guidefontsize=13,
+    bottom_margin=8Plots.mm, left_margin=8Plots.mm,
+    size=(500, 400))
+pg = plot(tau_waarden, t_piek_tau,
+    xlabel="τ [h]", ylabel="t_peak [h]",
+    color=:darkorange, lw=2, marker=:circle, markersize=7, legend=false,
+    tickfontsize=11, guidefontsize=13,
+    bottom_margin=8Plots.mm, left_margin=8Plots.mm,
+    size=(500, 400))
+fig1c = plot(pf, pg, layout=(1,2), size=(1000,420), margin=6Plots.mm)
 savefig(fig1c, "h1c_gevoeligheidsanalyse.png")
-println("  Figuur opgeslagen: h1c_gevoeligheidsanalyse.png")
+println("  Figure saved: h1c_gevoeligheidsanalyse.png")
 
 # ============================================================
 #  1d. One-step growth experiment: 5 MOI-waarden op één grafiek
 # ============================================================
-println("\n=== 1d: One-step growth experiment (5 MOI-curves) ===")
+println("\n=== 1d: One-step growth experiment (5 MOI curves) ===")
 
 moi_curves   = [0.001, 0.01, 0.1, 1.0, 5.0]
 kleuren      = [:darkred :red :orange :steelblue :darkblue]
 labels_P     = ["MOI=0.001" "MOI=0.01" "MOI=0.1" "MOI=1.0" "MOI=5.0"]
 
-fig1d_P  = plot(xlabel="t [h]", ylabel="Vrije fagen L⁻¹",
+fig1d_P  = plot(xlabel="t [h]", ylabel="Free phages L⁻¹",
     yscale=:log10, ylims=(1, :auto), legend=:topleft, size=(650,420),
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
     bottom_margin=6Plots.mm, left_margin=10Plots.mm)
-fig1d_X  = plot(xlabel="t [h]", ylabel="Totale biomassa (cellen L⁻¹)",
+fig1d_X  = plot(xlabel="t [h]", ylabel="Total biomass (cells L⁻¹)",
     yscale=:log10, ylims=(1e4, :auto), legend=:bottomleft, size=(650,420),
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
     bottom_margin=6Plots.mm, left_margin=10Plots.mm)
 
 for (idx, moi) in enumerate(moi_curves)
     sol_d = run(make_p1(1e9, 2.0, moi))
     if SciMLBase.successful_retcode(sol_d)
         t_d = sol_d.t
-        P_d = max.([ sol_d.u[i][Pfind]  for i in eachindex(sol_d.u)], 1.0)
+        P_d = max.([sol_d.u[i][Pfind]  for i in eachindex(sol_d.u)], 1.0)
         S_d = [sol_d.u[i][Sind_S] for i in eachindex(sol_d.u)]
         I_d = [sol_d.u[i][Sind_I] for i in eachindex(sol_d.u)]
         L_d = [sol_d.u[i][Sind_L] for i in eachindex(sol_d.u)]
@@ -159,18 +219,18 @@ for (idx, moi) in enumerate(moi_curves)
     end
 end
 
-vline!(fig1d_P, [2.0],     color=:gray,  lw=1, linestyle=:dash,  label="t_inf")
-vline!(fig1d_P, [2.0+tau], color=:black, lw=1, linestyle=:dot,   label="t_inf + τ")
-vline!(fig1d_X, [2.0],     color=:gray,  lw=1, linestyle=:dash,  label="t_inf")
+vline!(fig1d_P, [2.0],        color=:gray,  lw=1, linestyle=:dash, label="t_inf")
+vline!(fig1d_P, [2.0 + 1.32], color=:black, lw=1, linestyle=:dot,  label="t_inf + τ")
+vline!(fig1d_X, [2.0],        color=:gray,  lw=1, linestyle=:dash, label="t_inf")
 
 fig1d = plot(fig1d_P, fig1d_X, layout=(1,2), size=(1100,430), margin=6Plots.mm)
 savefig(fig1d, "h1d_onestep_growth.png")
-println("  Figuur opgeslagen: h1d_onestep_growth.png")
+println("  Figure saved: h1d_onestep_growth.png")
 
 # ============================================================
-#  1e. Groei op glucose vs maltose
+#  1e. Growth on glucose vs maltose
 # ============================================================
-println("\n=== 1e: Groei op glucose vs maltose ===")
+println("\n=== 1e: Growth on glucose vs maltose ===")
 
 V_max_glc  = [12.7, 0.0, 0.0, 4.0]
 V_max_malt = [0.0, 3.75, 0.0, 4.0]
@@ -237,12 +297,13 @@ mu_glc  = schat_mu(t_g, N_g)
 mu_malt = schat_mu(t_m, N_m)
 mu_both = schat_mu(t_b, N_b)
 
-println("  Geschatte µ glucose-only  : $(round(mu_glc,  digits=3)) h⁻¹")
-println("  Geschatte µ maltose-only  : $(round(mu_malt, digits=3)) h⁻¹")
-println("  Geschatte µ glucose+malt  : $(round(mu_both, digits=3)) h⁻¹")
+println("  Estimated µ glucose-only  : $(round(mu_glc,  digits=3)) h⁻¹")
+println("  Estimated µ maltose-only  : $(round(mu_malt, digits=3)) h⁻¹")
+println("  Estimated µ glucose+malt  : $(round(mu_both, digits=3)) h⁻¹")
 
-p1e_N = plot(xlabel="t [h]", ylabel="Vatbare cellen L⁻¹",
+p1e_N = plot(xlabel="t [h]", ylabel="Number of cells L⁻¹",
     yscale=:log10, ylims=(1e7, :auto), legend=:topleft,
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
     bottom_margin=6Plots.mm, left_margin=10Plots.mm)
 plot!(p1e_N, t_g, max.(N_g, 1.0), label="Glucose only",      color=:steelblue,  lw=2.5)
 plot!(p1e_N, t_m, max.(N_m, 1.0), label="Maltose only",      color=:darkorange, lw=2.5, linestyle=:dash)
@@ -254,22 +315,23 @@ annotate!(p1e_N, [(8.5, maximum(filter(x->x>1, N_m))*0.6,
 annotate!(p1e_N, [(8.5, maximum(filter(x->x>1, N_b))*1.1,
     text("µ≈$(round(mu_both,digits=2)) h⁻¹", 9, :darkgreen, :left))])
 
-p1e_S = plot(xlabel="t [h]", ylabel="Concentratie [mmol L⁻¹]",
+p1e_S = plot(xlabel="t [h]", ylabel="Concentration [mmol L⁻¹]",
     legend=:topright,
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
     bottom_margin=6Plots.mm, left_margin=10Plots.mm)
 plot!(p1e_S, t_b, glc_b,  label="Glucose",  color=:steelblue,  lw=2)
 plot!(p1e_S, t_b, malt_b, label="Maltose",  color=:darkorange, lw=2, linestyle=:dash)
 
 p1e_emal = plot(xlabel="t [h]", ylabel="e_mal [-]",
     legend=:topleft,
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
     bottom_margin=6Plots.mm, left_margin=10Plots.mm)
 plot!(p1e_emal, t_g, emal_g, label="Glucose only",      color=:steelblue,  lw=2.5)
 plot!(p1e_emal, t_m, emal_m, label="Maltose only",      color=:darkorange, lw=2.5, linestyle=:dash)
 plot!(p1e_emal, t_b, emal_b, label="Glucose + Maltose", color=:darkgreen,  lw=2.5, linestyle=:dot)
-hline!(p1e_emal, [0.05], color=:red, lw=1.5, linestyle=:dash, label="Infectiedrempel")
 
 fig1e = plot(p1e_N, p1e_S, p1e_emal, layout=(1,3), size=(1300,430), margin=6Plots.mm)
 savefig(fig1e, "h1e_glucose_vs_maltose.png")
-println("  Figuur opgeslagen: h1e_glucose_vs_maltose.png")
+println("  Figure saved: h1e_glucose_vs_maltose.png")
 
-println("\n=== Hoofdstuk 1 voltooid ===")
+println("\n=== Chapter 1 complete ===")

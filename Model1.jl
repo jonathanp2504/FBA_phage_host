@@ -96,8 +96,10 @@ function getNewInfectionFlux(u, p::Parameters)
 end
 
 function getAlfa_eff(u, p::Parameters)
-    e_mal = u[Eind[2]]; base_leak = 0.001
-    return p.alfa_ads * (base_leak + (1 - base_leak) * e_mal)
+    e_mal     = u[Eind[2]]
+    e_mal_max = p.e_max[2]
+    f_rec     = e_mal / e_mal_max  # genormaliseerd zoals Model 2
+    return p.alfa_ads * f_rec
 end
 
 function getMonod(substrates::Vector{Float64}, p::Parameters)::Vector{Float64}
