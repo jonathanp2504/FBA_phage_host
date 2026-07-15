@@ -42,7 +42,7 @@ essentials_ids = ["R_EX_o2_e","R_EX_nh4_e","R_EX_pi_e","R_EX_so4_e",
 all_ex_ids     = [id for id in keys(naiveModel.reactions) if startswith(id, "R_EX_")]
 MW_values      = [180.16, 342.3, 92.09, 60.05]
 h_release      = 1.71e-12
-duration       = 20.0
+duration       = 40.0
 mu_max_vector  = [0.76, 0.76, 1.10, 0.30]
 e_max_vector   = (alpha_syn .+ 0.001) ./ (beta_deg .+ mu_max_vector)
 

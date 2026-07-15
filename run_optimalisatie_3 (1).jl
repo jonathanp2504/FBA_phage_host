@@ -26,7 +26,7 @@ essentials_ids = ["R_EX_o2_e","R_EX_nh4_e","R_EX_pi_e","R_EX_so4_e",
                   "R_EX_cu2_e","R_EX_cobalt2_e","R_EX_mobd_e","R_EX_thi_e",
                   "R_EX_ni2_e","R_EX_sel_e","R_EX_slnt_e","R_EX_tungs_e"]
 MW_values      = [180.16, 342.3, 92.09, 60.05]
-h_release      = 1.71e-12;  duration = 20.0
+h_release      = 1.71e-12;  duration = 40.0
 mu_max_vector  = [0.76, 0.76, 1.10, 0.30]
 e_max_vector   = (alpha_syn .+ 0.001) ./ (beta_deg .+ mu_max_vector)
 E_coli_cellDW  = 1.0e-12
@@ -60,7 +60,7 @@ p_initial = Model3.Parameters(duration, 1e9, alpha_syn, beta_deg, K_s, V_max, p_
     0.0, zeros(4), 0.0, zeros(4), 0.0,
     7.92e-8, 6.48, 3.02, 0.01,
     2.0, 2.0*1e9,
-    "R_BENZ_prod", 0.05, 0.1, 0.0,
+    "R_BENZ_prod", 0.35, 0.1, 0.0,
     mu_max_vector, e_max_vector, 0.0015)
 
 # BENZ_REF: lysogenModel3 heeft Benzonase al toegevoegd
@@ -70,7 +70,7 @@ println("=== BENZ_REF berekening voor Model 3 ===")
 println("\n" * "="^60)
 println("OPTIMIZER A — MODEL 3")
 println("="^60)
-res_A = run_optimization_A(p_initial; w_benz=10.0, w_P=0.1, w_t=0.1)
+res_A = run_optimization_A(p_initial; w_benz=11.0, w_P=0.112, w_t=0.20)
 println("\nResultaat A: MOI=$(round(res_A.best_moi,digits=4)) | ",
         "t_inf=$(round(res_A.best_t_inf,digits=2)) h | ",
         "score=$(round(res_A.best_score,digits=6))")

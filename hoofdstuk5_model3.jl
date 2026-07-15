@@ -21,7 +21,7 @@ essentials_ids= ["R_EX_o2_e","R_EX_nh4_e","R_EX_pi_e","R_EX_so4_e",
                  "R_EX_cu2_e","R_EX_cobalt2_e","R_EX_mobd_e","R_EX_thi_e",
                  "R_EX_ni2_e","R_EX_sel_e","R_EX_slnt_e","R_EX_tungs_e"]
 MW_values     = [180.16, 342.3, 92.09, 60.05]
-h_release     = 1.71e-12;  duration = 40.0
+h_release     = 1.71e-12;  duration = 50.0
 mu_max_vector = [0.76, 0.76, 1.10, 0.30]
 e_max_vector  = (alpha_syn .+ 0.001) ./ (beta_deg .+ mu_max_vector)
 E_coli_cellDW = 1.0e-12
@@ -48,7 +48,7 @@ end
 # ============================================================
 println("=== 5a (M3): Optimal run Model 3 ===")
 
-opt_moi      = 0.0094; opt_t_inf = 3.77; opt_biomassa = 1e9
+opt_moi      = 0.1; opt_t_inf = 5.0; opt_biomassa = 1e9
 
 p_opt   = make_p3b(opt_biomassa, opt_t_inf, opt_moi)
 sol_opt = Model3.run(p_opt)
@@ -57,6 +57,13 @@ B_opt   = [sol_opt.u[i][Model3.Benzind] for i in eachindex(sol_opt.u)]
 Pf_opt  = [sol_opt.u[i][Model3.Pfind]  for i in eachindex(sol_opt.u)]
 N_opt   = [sol_opt.u[i][Model3.Nind]   for i in eachindex(sol_opt.u)]
 PN_opt  = [N_opt[i]>1.0 ? Pf_opt[i]/N_opt[i] : 0.0 for i in eachindex(t_opt)]
+
+B_max    = maximum(B_opt)
+idx_95   = findfirst(B_opt .>= 0.95 * B_max)
+t_95     = isnothing(idx_95) ? p_opt.duration : t_opt[idx_95]
+dt_prod  = t_95 - opt_t_inf
+@printf("Max benzonase        : %.5f mmol/L\n", B_max)
+@printf("dt_prod (t95 - t_inf): %.2f h\n", dt_prod)
 
 pa = plot(t_opt, B_opt, label="Benzonase", color=:green, lw=2, fill=(0,0.2,:green),
     xlabel="t [h]", ylabel="Benzonase [mmol L⁻¹]", legend=:topleft,
@@ -80,8 +87,8 @@ println("  Saved: h5a_m3_optimalisatie.png")
 println("\n=== 5_pareto: Pareto punten A, B, C tijdseries ===")
 
 pareto_punten = [
-    (label="A", moi=3.0,  t_inf=0.5, kleur=:darkred),
-    (label="C", moi=0.01, t_inf=3.0, kleur=:steelblue),
+    (label="A", moi=5.0,  t_inf=0.5, kleur=:darkred),
+    (label="C", moi=0.5, t_inf=3.0, kleur=:steelblue),
     (label="B", moi=0.1,  t_inf=7.0, kleur=:darkgreen),
 ]
 
@@ -245,6 +252,182 @@ fig5b_m3 = plot(p5b_score, p5b_ts, layout=(1,2), size=(1200,450), margin=6Plots.
 savefig(fig5b_m3, "h5b_m3_gm_puls.png")
 println("  Saved: h5b_m3_gm_puls.png")
 
+# ============================================================
+#  5c_gm. Glucose-maltose pulse scenario (Model 3, zoals 2c)
+# ============================================================
+println("\n=== 5c_gm (M3): Glucose-maltose pulse scenario ===")
+
+delta_t_values_gm = [0.25, 0.5, 1.0, 1.5, 2.0, 3.0]
+malt_puls_gm      = 2.337
+max_benz_gm       = Float64[]
+t_max_benz_gm     = Float64[]
+yield_per_h_gm    = Float64[]
+
+for dt in delta_t_values_gm
+    t_puls = opt_t_inf - dt
+    t_puls < 0.1 && continue
+    sol_gm = run_gm_puls_m3(opt_biomassa, opt_t_inf, opt_moi, t_puls, malt_puls_gm)
+    if SciMLBase.successful_retcode(sol_gm)
+        B_ts  = [sol_gm.u[i][Model3.Benzind] for i in eachindex(sol_gm.u)]
+        i_max = argmax(B_ts)
+        t_max = sol_gm.t[i_max]
+        b_max = B_ts[i_max]
+        push!(max_benz_gm,   b_max)
+        push!(t_max_benz_gm, t_max)
+        push!(yield_per_h_gm, t_max > 0.0 ? b_max / t_max : 0.0)
+    else
+        push!(max_benz_gm, 0.0); push!(t_max_benz_gm, NaN); push!(yield_per_h_gm, 0.0)
+    end
+end
+
+sol_std_m3   = Model3.run(make_p3b(opt_biomassa, opt_t_inf, opt_moi))
+B_std_m3     = [sol_std_m3.u[i][Model3.Benzind] for i in eachindex(sol_std_m3.u)]
+Benz_std_m3  = maximum(B_std_m3)
+t_std_max_m3 = sol_std_m3.t[argmax(B_std_m3)]
+yph_std_m3   = t_std_max_m3 > 0.0 ? Benz_std_m3 / t_std_max_m3 : 0.0
+
+dt_vals_gm = delta_t_values_gm[1:length(max_benz_gm)]
+
+p5cgm_eind = bar(dt_vals_gm, max_benz_gm,
+    color=:teal, legend=:outertopright,
+    xlabel="Δt maltose pulse before infection [h]",
+    ylabel="Max Benzonase [mmol L⁻¹]",
+    label="Glc+Malt pulse",
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
+    bottom_margin=8Plots.mm, left_margin=10Plots.mm)
+hline!(p5cgm_eind, [Benz_std_m3], color=:black, lw=2, linestyle=:dash, label="Always maltose (ref)")
+
+p5cgm_tijdstip = bar(dt_vals_gm, t_max_benz_gm,
+    color=:darkorange, legend=:outertopright,
+    xlabel="Δt maltose pulse before infection [h]",
+    ylabel="Time of max Benzonase [h]",
+    label="Glc+Malt pulse",
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
+    bottom_margin=8Plots.mm, left_margin=10Plots.mm)
+hline!(p5cgm_tijdstip, [t_std_max_m3], color=:black, lw=2, linestyle=:dash, label="Always maltose (ref)")
+
+p5cgm_yield = bar(dt_vals_gm, yield_per_h_gm,
+    color=:purple, legend=:outertopright,
+    xlabel="Δt maltose pulse before infection [h]",
+    ylabel="Benzonase yield [mmol L⁻¹ h⁻¹]",
+    label="Glc+Malt pulse",
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
+    bottom_margin=8Plots.mm, left_margin=10Plots.mm)
+hline!(p5cgm_yield, [yph_std_m3], color=:black, lw=2, linestyle=:dash, label="Always maltose (ref)")
+
+fig5cgm_m3 = plot(p5cgm_eind, p5cgm_tijdstip, p5cgm_yield,
+    layout=(1,3), size=(1400,430), margin=6Plots.mm)
+savefig(fig5cgm_m3, "h5cgm_m3_glucose_maltose_puls.png")
+println("  Saved: h5cgm_m3_glucose_maltose_puls.png")
+
+# ============================================================
+#  5e_gm. Gecombineerde puls voor EN na infectie (Model 3, zoals 2e)
+# ============================================================
+println("\n=== 5e_gm (M3): Combined maltose pulse timing ===")
+
+function run_fagen_eerst_m3(N0, t_inf, moi, delta_t_na, malt_puls, k_tox=0.35)
+    t_malt = t_inf + delta_t_na
+    p = make_p3b(N0, t_inf, moi, k_tox)
+    u0 = zeros(23)
+    u0[Model3.Sind] = [4.44, 0.0, 5.42, 0.0]
+    u0[Model3.Eind] = [0.95, 0.01, 0.01, 0.01]
+    u0[Model3.Nind] = N0
+    tspan = (0.0, p.duration)
+
+    maltoseCondition(u,t,integrator)   = t == t_malt
+    maltoseAffect!(integrator)         = integrator.u[Model3.Sind[2]] += malt_puls
+    maltoseCallBack = DiscreteCallback(maltoseCondition, maltoseAffect!)
+    infectionCondition(u,t,integrator) = t == p.infection_time
+    infectionAffect!(integrator)       = integrator.u[Model3.Pfind] = p.infection_dose
+    infectionCallBack = DiscreteCallback(infectionCondition, infectionAffect!)
+    fbaUpdateTimepoints = collect(0:1/60:p.duration)
+    fbaUpdateCondition(u,t,integrator) = t in fbaUpdateTimepoints
+    fbaAffect!(integrator)             = Model3.fbaUpdate!(integrator.u, p)
+    fbaCallBack = DiscreteCallback(fbaUpdateCondition, fbaAffect!)
+    domainCondition(u,t,integrator)    = any(x->x<0.0, u)
+    domainAffect!(integrator)          = Model3.enforcePositiveDomain!(integrator.u)
+    domainCallBack = DiscreteCallback(domainCondition, domainAffect!)
+
+    problem = DDEProblem(Model3.simulate_dFBA!, u0, (p,t)->u0, tspan, p)
+    return solve(problem, MethodOfSteps(Tsit5()), verbose=false, reltol=1e-4, abstol=1e-6,
+        tstops=sort(unique([t_malt; p.infection_time; fbaUpdateTimepoints])),
+        callback=CallbackSet(domainCallBack, maltoseCallBack, infectionCallBack, fbaCallBack))
+end
+
+malt_5e       = 2.337
+delta_t_voor_5e = [-3.0, -2.0, -1.5, -1.0, -0.5, -0.25]
+delta_t_na_5e   = [0.0, 0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0, 5.0]
+
+alle_dt_5e    = Float64[]
+alle_benz_5e  = Float64[]
+alle_t_max_5e = Float64[]
+
+for dt in delta_t_voor_5e
+    t_puls = opt_t_inf + dt
+    t_puls < 0.1 && continue
+    sol_gm = run_gm_puls_m3(opt_biomassa, opt_t_inf, opt_moi, t_puls, malt_5e)
+    if SciMLBase.successful_retcode(sol_gm)
+        B_ts  = [sol_gm.u[i][Model3.Benzind] for i in eachindex(sol_gm.u)]
+        i_max = argmax(B_ts)
+        push!(alle_dt_5e,    dt)
+        push!(alle_benz_5e,  B_ts[i_max])
+        push!(alle_t_max_5e, sol_gm.t[i_max])
+    end
+end
+
+for dt in delta_t_na_5e
+    sol_na = run_fagen_eerst_m3(opt_biomassa, opt_t_inf, opt_moi, dt, malt_5e)
+    if SciMLBase.successful_retcode(sol_na)
+        B_na  = [sol_na.u[i][Model3.Benzind] for i in eachindex(sol_na.u)]
+        i_max = argmax(B_na)
+        push!(alle_dt_5e,    dt)
+        push!(alle_benz_5e,  B_na[i_max])
+        push!(alle_t_max_5e, sol_na.t[i_max])
+    end
+end
+
+ord_5e     = sortperm(alle_dt_5e)
+alle_dt_5e    = alle_dt_5e[ord_5e]
+alle_benz_5e  = alle_benz_5e[ord_5e]
+alle_t_max_5e = alle_t_max_5e[ord_5e]
+
+sol_ref_malt_5e = Model3.run(make_p3b(opt_biomassa, opt_t_inf, opt_moi))
+B_ref_5e        = [sol_ref_malt_5e.u[i][Model3.Benzind] for i in eachindex(sol_ref_malt_5e.u)]
+benz_ref_5e     = maximum(B_ref_5e)
+t_ref_max_5e    = sol_ref_malt_5e.t[argmax(B_ref_5e)]
+
+sol_geen_malt_5e  = run_fagen_eerst_m3(opt_biomassa, opt_t_inf, opt_moi, 999.0, 0.0)
+B_geen_5e         = [sol_geen_malt_5e.u[i][Model3.Benzind] for i in eachindex(sol_geen_malt_5e.u)]
+benz_geen_5e      = maximum(B_geen_5e)
+t_geen_max_5e     = sol_geen_malt_5e.t[argmax(B_geen_5e)]
+
+p5e_eind = plot(alle_dt_5e, alle_benz_5e,
+    marker=:circle, lw=2, color=:teal,
+    xlabel="Δt maltose pulse relative to infection [h]",
+    ylabel="Max Benzonase [mmol L⁻¹]",
+    label="Maltose pulse",
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
+    legend=:outertopright,
+    bottom_margin=8Plots.mm, left_margin=10Plots.mm)
+vline!(p5e_eind, [0.0], color=:gray, lw=1, linestyle=:dash, label="Infection moment")
+hline!(p5e_eind, [benz_geen_5e], color=:red,   lw=2, linestyle=:dash, label="No maltose")
+hline!(p5e_eind, [benz_ref_5e],  color=:black, lw=2, linestyle=:dot,  label="Always maltose (ref)")
+
+p5e_tijdstip = plot(alle_dt_5e, alle_t_max_5e,
+    marker=:square, lw=2, color=:darkorange,
+    xlabel="Δt maltose pulse relative to infection [h]",
+    ylabel="Time of max Benzonase [h]",
+    label="Maltose pulse",
+    tickfontsize=11, guidefontsize=13, legendfontsize=10,
+    legend=:outertopright,
+    bottom_margin=8Plots.mm, left_margin=10Plots.mm)
+vline!(p5e_tijdstip, [0.0], color=:gray, lw=1, linestyle=:dash, label="Infection moment")
+hline!(p5e_tijdstip, [t_geen_max_5e], color=:red,   lw=2, linestyle=:dash, label="No maltose")
+hline!(p5e_tijdstip, [t_ref_max_5e],  color=:black, lw=2, linestyle=:dot,  label="Always maltose (ref)")
+
+fig5e_gm_m3 = plot(p5e_eind, p5e_tijdstip, layout=(1,2), size=(1200,450), margin=6Plots.mm)
+savefig(fig5e_gm_m3, "h5e_gm_m3_fagen_voor_maltose.png")
+println("  Saved: h5e_gm_m3_fagen_voor_maltose.png")
 # ============================================================
 #  5c. Toxicity threshold k_tox
 # ============================================================

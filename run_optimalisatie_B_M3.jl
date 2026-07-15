@@ -10,7 +10,7 @@ import Main.Model3: run, Benzind, Pfind, Nind
 #  optimaliseert infectietijdstip + beginbiomassa
 # ============================================================
 
-const FIXED_MOI_B = 0.01
+const FIXED_MOI_B = 0.0013
 
 const BENZ_REF_B = Ref(0.124)  # mmol/L, zelfde referentie als Optimizer A
 

@@ -11,21 +11,21 @@ import Main.Model3: run, Benzind, Pfind, Nind
 # ============================================================
 
 const FIXED_BIOMASSA_A = 1e9
-const W_BENZ_DEFAULT   = 10.0
-const W_P_DEFAULT      = 0.1
-const W_T_DEFAULT      = 0.1
+const W_BENZ_DEFAULT   = 11.0
+const W_P_DEFAULT      = 0.112
+const W_T_DEFAULT      = 0.20
 
 const BENZ_REF_A = Ref(0.124)  # mmol/L, theoretische max: alle maltose-energie naar Benzonase
 
 function evaluate_A(t_inf::Float64, moi::Float64,
                     p_base;
-                    w_benz::Float64 = 10.0,
-                    w_P::Float64    = 0.1,
-                    w_t::Float64    = 0.1)
+                    w_benz::Float64 = 11.0,
+                    w_P::Float64    = 0.112,
+                    w_t::Float64    = 0.20)
 
     biomass       = FIXED_BIOMASSA_A
     infectiedosis = moi * biomass
-
+    println("Duration in gebruik: $(p_base.duration)")
     p_test = Model3.Parameters(
         p_base.duration, biomass,
         p_base.alpha_syn, p_base.beta_deg, p_base.K_s, p_base.V_max, p_base.p_pref,
@@ -48,6 +48,7 @@ function evaluate_A(t_inf::Float64, moi::Float64,
         !SciMLBase.successful_retcode(sol) && return -Inf
 
         max_benz   = maximum(sol[Benzind, :])
+        println("DEBUG check: Benzind=$(Benzind) | laatste waarde=$(sol.u[end][Benzind])")
         benz_norm = 1.0 - exp(-max_benz / BENZ_REF_A[])
         println("DEBUG: max_benz=$max_benz | benz_norm=$benz_norm | w_benz=$w_benz | term=$(w_benz * benz_norm)")
         P_max_sim  = maximum(sol[Pfind, :])
@@ -64,9 +65,9 @@ function evaluate_A(t_inf::Float64, moi::Float64,
 end
 
 function run_optimization_A(p_initial;
-                             w_benz::Float64 = 0.8,
-                             w_P::Float64    = 0.1,
-                             w_t::Float64    = 0.1)
+                             w_benz::Float64 = 11.0,
+                             w_P::Float64    = 0.112,
+                             w_t::Float64    = 0.20)
 
     moi_values   = [0.001, 0.01, 0.1, 0.5, 1.0, 2.0, 5.0]
     t_inf_values = [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 13.0]
