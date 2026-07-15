@@ -10,7 +10,7 @@ using COBREXA
 using HiGHS
 using AbstractFBCModels
 import SBMLFBCModels
-
+include("./Bin/parameters.jl")
 # ============================================================
 #  State vector indices (23 elementen)
 # ============================================================
@@ -213,8 +213,7 @@ function run(p::Parameters)
     # (28/60 h) and lysis (79/60 h) delays. Both must be in tstops so the
     # solver does not step over them.
     problem = DDEProblem(simulate_dFBA!, u0, (p, t) -> u0, tspan, p)
-    return solve(problem, MethodOfSteps(Tsit5()),
-        verbose=false, reltol=1e-4, abstol=1e-6,
+    return solve(problem, MethodOfSteps(Tsit5()), reltol=1e-4, abstol=1e-6,
         tstops=[p.infection_time;
                 p.infection_time + p.tau_death;
                 p.infection_time + p.tau_death + 28/60;
@@ -229,65 +228,51 @@ function simulate_dFBA!(du, u, h, p::Parameters, t)::Nothing
 end
 
 function updatePhageHostRates!(du, u, h, p::Parameters, t)::Nothing
-    uDecision = h(p, t - 28/60)
-    uLysis    = h(p, t - 79/60)
-    # Correct reconstruction of "the entry flux into lysogeny/production
-    # that occurred exactly tau_death hours ago". The live entry flux
-    # further below is assembled from u(t) (for getProbLys and the
-    # receptor-modulated k_inject) and uDecision = u(t - 28/60) (for Pa
-    # and N). To reconstruct that same flux as it was tau_death hours
-    # ago, BOTH of those need to be shifted back by tau_death as well --
-    # i.e. two separate history lookups, not a single lookup at
-    # t - 28/60 - tau_death applied to every term (that earlier version
-    # double-delayed the receptor/probability terms, making the
-    # reconstructed flux far too small to visibly remove any biomass --
-    # this is why no toxicity was visible).
-    uAtEntry         = h(p, t - p.tau_death)
-    uAtEntryDecision = h(p, t - p.tau_death - 28/60)
+    du[Nind] = 0.0; du[Dind] = 0.0; du[Lind] = 0.0; du[lind] = 0.0
+    du[Pfind] = 0.0; du[Paind] = 0.0; du[MOIind] = 0.0; du[Benzind] = 0.0
 
-    X_tot     = getTotalBiomass(u, p)
-    f_receptor = getReceptorFactor(u, p)
-    k_attach_eff = p.k_attach * f_receptor
-    k_inject_eff = p.k_inject * f_receptor
     mu_eff_l = p.mu_l * (1.0 - p.f_prod)
 
-    f_receptor_death   = getReceptorFactor(uAtEntry, p)
-    k_inject_eff_death = p.k_inject * f_receptor_death
-    entry_flux_death   = getProbLys(uAtEntry, p) * k_inject_eff_death *
-                         uAtEntryDecision[Paind] * uAtEntryDecision[Nind] / getTotalBiomass(uAtEntryDecision, p)
-    # See Model3.jl for the full explanation: rather than approximating the
-    # cohort's growth with exp(mu_eff_l * tau_death) (unreliable if
-    # mu_eff_l changed during the last tau_death hours), the actual growth
-    # factor is read directly from the simulated lysogenic population: how
-    # much has it grown compared to tau_death hours ago.
-    Xlys_then    = uAtEntry[lind]
-    Xlys_now     = u[lind]
-    growth_ratio = Xlys_then > 1e-6 ? Xlys_now / Xlys_then : 0.0
-    death_flux   = entry_flux_death * growth_ratio
+    # Growth
+    du[Nind] += p.mu_N * u[Nind]
+    # Infection that is happening NOW
+    infectionRate = p.k_inject * getReceptorFactor(u, p) * u[Paind] * u[Nind] / getTotalBiomass(u, p)
+    du[Nind] -= infectionRate
+    du[Dind] += infectionRate
+    # Decision of infections that happend 28/60 h ago
+    uAtInfection = h(p, t - 28/60)
+    infectionRate = p.k_inject * getReceptorFactor(uAtInfection, p) * uAtInfection[Paind] * uAtInfection[Nind] / getTotalBiomass(uAtInfection, p)
+    du[Dind] -= infectionRate
+    du[Lind] += (1 - getProbLys(u, p)) * infectionRate
+    du[lind] += getProbLys(u, p) * infectionRate
 
-    du[Nind]  = p.mu_N * u[Nind] - k_inject_eff * u[Paind] * u[Nind] / X_tot
-    du[Dind]  = k_inject_eff * u[Paind] * u[Nind] / X_tot
-    du[Dind] -= k_inject_eff * uDecision[Paind] * uDecision[Nind] / getTotalBiomass(uDecision, p)
-    du[Lind]  = (1 - getProbLys(u, p)) * k_inject_eff * uDecision[Paind] * uDecision[Nind] / getTotalBiomass(uDecision, p)
-    du[Lind] -= (1 - getProbLys(uDecision, p)) * k_inject_eff * uLysis[Paind] * uLysis[Nind] / getTotalBiomass(uLysis, p)
+    du[MOIind] += p.k_inject * getReceptorFactor(u, p) * u[Paind] / getTotalBiomass(u, p)
+    du[MOIind] -= p.k_inject * getReceptorFactor(uAtInfection, p) * uAtInfection[Paind] / getTotalBiomass(uAtInfection, p)
+    
+    # Lysis of infections that happened 79/60 h ago
+    uAtInfection    = h(p, t - (79/60))
+    uAtDecision    = h(p, t - 79/60 + 28/60)
+    infectionRate = p.k_inject * getReceptorFactor(uAtInfection, p) * uAtInfection[Paind] * uAtInfection[Nind] / getTotalBiomass(uAtInfection, p)
+    lysingRate = (1 - getProbLys(uAtDecision, p)) * p.k_inject * getReceptorFactor(uAtInfection, p) * uAtInfection[Paind] * uAtInfection[Nind] / getTotalBiomass(uAtInfection, p)
+    du[Lind] -= lysingRate
+    du[Pfind] += p.b * lysingRate
 
-    # Lysogenic / producing cells: gain the entry flux now, grow at the
-    # production-reduced rate mu_eff_l, and lose -- entirely, not
-    # exponentially -- the cohort that entered exactly tau_death hours ago.
-    # There is no more continuous k_tox term.
-    du[lind]  = getProbLys(u, p) * k_inject_eff * uDecision[Paind] * uDecision[Nind] / getTotalBiomass(uDecision, p)
-    du[lind] += mu_eff_l * u[lind]
-    du[lind] -= death_flux
+    # Death of lysogens that started the lysogenic state tau_death h ago    
+    uAtInfection    = h(p, t - p.tau_death - 28/60)
+    infectionRate = p.k_inject * getReceptorFactor(uAtInfection, p) * uAtInfection[Paind] * uAtInfection[Nind] / getTotalBiomass(uAtInfection, p)
+    uAtDecision    = h(p, t - p.tau_death)
+    du[lind] -= getProbLys(uAtDecision, p) * infectionRate
 
-    du[MOIind]  = k_inject_eff * u[Paind] / X_tot
-    du[MOIind] -= k_inject_eff * uDecision[Paind] / getTotalBiomass(uDecision, p)
-    du[Pfind]  = p.b * (1 - getProbLys(uDecision, p)) * p.k_inject * uLysis[Paind] * uLysis[Nind] / getTotalBiomass(uLysis, p)
-    du[Pfind] -= k_attach_eff * X_tot * u[Pfind]
+    # Attachment and detachment of phages
+    du[Pfind] -= p.k_attach * getReceptorFactor(u, p) * getTotalBiomass(u, p) * u[Pfind]
     du[Pfind] += p.k_dettach * u[Paind]
-    du[Paind]  = k_attach_eff * X_tot * u[Pfind] - p.k_dettach * u[Paind] - k_inject_eff * u[Paind]
-    du[Sind[1]] = p.h_release * p.k_inject * uLysis[Paind] * uLysis[Nind] / getTotalBiomass(uLysis, p)
+    du[Paind] += p.k_attach * getReceptorFactor(u, p) * getTotalBiomass(u, p) * u[Pfind]
+    du[Paind] -= p.k_dettach * u[Paind] 
+    du[Paind] -= p.k_inject * getReceptorFactor(u, p) * u[Paind]
+
+    #du[Sind[1]] = p.h_release * p.k_inject * uLysis[Paind] * uLysis[Nind] / getTotalBiomass(uLysis, p)
     groeiverlies = p.mu_l - mu_eff_l
-    du[Benzind]  = groeiverlies * u[lind] * p.Y_benz * p.E_coli_cellDW
+    du[Benzind] += groeiverlies * u[lind] * p.Y_benz * p.E_coli_cellDW
     return nothing
 end
 
